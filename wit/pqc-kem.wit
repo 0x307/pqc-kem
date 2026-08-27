@@ -1,0 +1,365 @@
+// =============================================================================
+// wit/pqc-kem.wit  —  REFERENCE DOCUMENT ONLY
+// =============================================================================
+//
+// ⚠️  THIS IS NOT A BUILDABLE WIT INTERFACE  ⚠️
+//
+// This file documents the flat wasm-bindgen API surface of `pqc-kem`.
+// It is written in WIT-style pseudocode for readability, but it CANNOT be
+// used with `jco`, `cargo component`, or any WASM Component Model toolchain.
+//
+// WHY: The compiled output (`pqc_kem.js` / `pqc_kem_bg.wasm`) is produced by
+//   `wasm-pack` with `wasm-bindgen`, which generates a flat JS module — NOT a
+//   WASM Component Model component. The two formats are incompatible.
+//
+// TO USE THE ACTUAL API:
+//   Import directly from the wasm-pack output:
+//
+//     import init, { WasmHybridKemKeypair, hybrid_encapsulate, ... }
+//       from './pqc_kem.js';
+//     await init();
+//
+//   See the JavaScript usage example at the bottom of this file.
+//
+// BUILD COMMAND (produces pqc_kem.js + pqc_kem_bg.wasm):
+//   wasm-pack build --target web --features wasm
+//
+// SOURCE OF TRUTH: src/wasm.rs
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// PACKAGE (informational — not a real WIT package declaration)
+// -----------------------------------------------------------------------------
+//
+// package 0x307:pqc-kem@0.1.0;   // ← pseudocode only, not parseable by jco
+
+// =============================================================================
+// CLASS: WasmHybridKemKeypair
+// =============================================================================
+//
+// Hybrid X25519 + ML-KEM-768 keypair (RECOMMENDED construction).
+//
+// Security: breaking this requires breaking BOTH X25519 AND ML-KEM-768
+// simultaneously. Provides classical + post-quantum security.
+//
+// Key derivation: HKDF-SHA256 over (x25519_ss ‖ mlkem_ss), 64 bytes combined,
+//   info = "pqc-kem-hybrid-v1", output = 32 bytes.
+//
+// resource WasmHybridKemKeypair {
+//
+//   /// Generate a new hybrid keypair using window.crypto.getRandomValues().
+//   /// Throws a JavaScript Error on failure (entropy unavailable, etc.).
+//   constructor();
+//
+//   /// Returns the public key as a JSON string. Share with senders.
+//   ///
+//   /// JSON wire format:
+//   /// {
+//   ///   "x25519_key":       "<base64url>",  // X25519 public key, 32 bytes
+//   ///   "mlkem_key":        "<base64url>",  // ML-KEM-768 public key, 1184 bytes
+//   ///   "x25519_multibase": "<string>",     // base58btc multibase, prefix 'z'
+//   ///   "mlkem_multibase":  "<string>"      // base58btc multibase, prefix 'z'
+//   /// }
+//   ///
+//   /// Throws on serialization error.
+//   public_key_json: func() -> result<string, error>;
+//
+//   /// Returns the raw X25519 public key bytes (always 32 bytes).
+//   x25519_public_bytes: func() -> Uint8Array;   // 32 bytes
+//
+//   /// Returns the raw ML-KEM-768 public key bytes (always 1184 bytes).
+//   mlkem_public_bytes: func() -> Uint8Array;    // 1184 bytes
+//
+//   /// Decapsulate a hybrid ciphertext JSON string produced by hybrid_encapsulate().
+//   ///
+//   /// `ciphertext_json`: the value of the "ciphertext" field from hybrid_encapsulate().
+//   ///
+//   /// Returns the 32-byte shared secret as a Uint8Array.
+//   /// Throws a JavaScript Error if the ciphertext is malformed or mismatched.
+//   decapsulate: func(ciphertext_json: string) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Zeroizes secret key material in WASM memory.
+//   /// Called automatically via [Symbol.dispose]() in environments that support
+//   /// the TC39 Explicit Resource Management proposal (`using` keyword).
+//   free: func();
+// }
+
+// =============================================================================
+// CLASS: WasmMlKem512Keypair
+// =============================================================================
+//
+// ML-KEM-512 keypair (NIST FIPS 203, Security Level 1 — AES-128 equivalent).
+//
+// resource WasmMlKem512Keypair {
+//
+//   /// Generate a new ML-KEM-512 keypair.
+//   /// Throws a JavaScript Error on failure.
+//   constructor();
+//
+//   /// Returns the public key as raw bytes (always 800 bytes).
+//   public_key_bytes: func() -> Uint8Array;      // 800 bytes
+//
+//   /// Returns the public key as a base64url-encoded string.
+//   public_key_base64url: func() -> string;
+//
+//   /// Decapsulate a ciphertext (768 bytes), returning the 32-byte shared secret.
+//   ///
+//   /// `ciphertext_bytes`: raw ciphertext Uint8Array from ml_kem_512_encapsulate().
+//   ///
+//   /// Throws a JavaScript Error if the ciphertext is invalid or mismatched.
+//   decapsulate: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Zeroizes secret key material. Also called via [Symbol.dispose]().
+//   free: func();
+// }
+
+// =============================================================================
+// CLASS: WasmMlKem768Keypair
+// =============================================================================
+//
+// ML-KEM-768 keypair (NIST FIPS 203, Security Level 3 — AES-192 equivalent).
+// Recommended standalone ML-KEM parameter set.
+//
+// resource WasmMlKem768Keypair {
+//
+//   /// Generate a new ML-KEM-768 keypair.
+//   /// Throws a JavaScript Error on failure.
+//   constructor();
+//
+//   /// Returns the public key as raw bytes (always 1184 bytes).
+//   public_key_bytes: func() -> Uint8Array;      // 1184 bytes
+//
+//   /// Returns the public key as a base64url-encoded string.
+//   public_key_base64url: func() -> string;
+//
+//   /// Decapsulate a ciphertext (1088 bytes), returning the 32-byte shared secret.
+//   ///
+//   /// `ciphertext_bytes`: raw ciphertext Uint8Array from ml_kem_768_encapsulate().
+//   ///
+//   /// Throws a JavaScript Error if the ciphertext is invalid or mismatched.
+//   decapsulate: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Zeroizes secret key material. Also called via [Symbol.dispose]().
+//   free: func();
+// }
+
+// =============================================================================
+// CLASS: WasmMlKem1024Keypair
+// =============================================================================
+//
+// ML-KEM-1024 keypair (NIST FIPS 203, Security Level 5 — AES-256 equivalent).
+//
+// resource WasmMlKem1024Keypair {
+//
+//   /// Generate a new ML-KEM-1024 keypair.
+//   /// Throws a JavaScript Error on failure.
+//   constructor();
+//
+//   /// Returns the public key as raw bytes (always 1568 bytes).
+//   public_key_bytes: func() -> Uint8Array;      // 1568 bytes
+//
+//   /// Returns the public key as a base64url-encoded string.
+//   public_key_base64url: func() -> string;
+//
+//   /// Decapsulate a ciphertext (1568 bytes), returning the 32-byte shared secret.
+//   ///
+//   /// `ciphertext_bytes`: raw ciphertext Uint8Array from ml_kem_1024_encapsulate().
+//   ///
+//   /// Throws a JavaScript Error if the ciphertext is invalid or mismatched.
+//   decapsulate: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Zeroizes secret key material. Also called via [Symbol.dispose]().
+//   free: func();
+// }
+
+// =============================================================================
+// FREE FUNCTIONS
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// hybrid_encapsulate
+// -----------------------------------------------------------------------------
+//
+// Encapsulate to a recipient's hybrid X25519 + ML-KEM-768 public key.
+//
+// hybrid_encapsulate: func(recipient_public_key_json: string) -> result<string, error>;
+//
+// Parameters:
+//   recipient_public_key_json — JSON string from WasmHybridKemKeypair.public_key_json()
+//
+// Returns a JSON string with the following wire format:
+// {
+//   "ciphertext": {
+//     "classical_ct": "<base64url>",  // X25519 ephemeral public key, 32 bytes
+//     "pqc_ct":       "<base64url>",  // ML-KEM-768 ciphertext, 1088 bytes
+//     "algorithm":    "X25519+ML-KEM-768"
+//   },
+//   "shared_secret": "<base64url>"   // HKDF-SHA256 derived, 32 bytes (KEEP SECRET)
+// }
+//
+// The "ciphertext" object (as a JSON string) is passed to WasmHybridKemKeypair.decapsulate().
+// The "shared_secret" is the sender's copy of the 32-byte shared secret.
+//
+// HKDF construction:
+//   input_keying_material = x25519_shared_secret ‖ mlkem_shared_secret  (64 bytes)
+//   info                  = "pqc-kem-hybrid-v1"
+//   hash                  = SHA-256
+//   output_length         = 32 bytes
+//
+// Throws a JavaScript Error if the public key JSON is malformed or invalid.
+
+// -----------------------------------------------------------------------------
+// ml_kem_512_encapsulate
+// -----------------------------------------------------------------------------
+//
+// Encapsulate to an ML-KEM-512 recipient public key.
+//
+// ml_kem_512_encapsulate: func(recipient_public_key_bytes: Uint8Array) -> result<string, error>;
+//
+// Parameters:
+//   recipient_public_key_bytes — raw 800-byte public key from WasmMlKem512Keypair.public_key_bytes()
+//
+// Returns a JSON string:
+// {
+//   "ciphertext":    "<base64url>",  // ML-KEM-512 ciphertext, 768 bytes (send to recipient)
+//   "shared_secret": "<base64url>"  // 32-byte shared secret (KEEP SECRET)
+// }
+//
+// The base64url-decoded "ciphertext" bytes are passed to WasmMlKem512Keypair.decapsulate().
+// Throws a JavaScript Error if the public key is invalid.
+
+// -----------------------------------------------------------------------------
+// ml_kem_768_encapsulate
+// -----------------------------------------------------------------------------
+//
+// Encapsulate to an ML-KEM-768 recipient public key.
+//
+// ml_kem_768_encapsulate: func(recipient_public_key_bytes: Uint8Array) -> result<string, error>;
+//
+// Parameters:
+//   recipient_public_key_bytes — raw 1184-byte public key from WasmMlKem768Keypair.public_key_bytes()
+//
+// Returns a JSON string:
+// {
+//   "ciphertext":    "<base64url>",  // ML-KEM-768 ciphertext, 1088 bytes (send to recipient)
+//   "shared_secret": "<base64url>"  // 32-byte shared secret (KEEP SECRET)
+// }
+//
+// The base64url-decoded "ciphertext" bytes are passed to WasmMlKem768Keypair.decapsulate().
+// Throws a JavaScript Error if the public key is invalid.
+
+// -----------------------------------------------------------------------------
+// ml_kem_1024_encapsulate
+// -----------------------------------------------------------------------------
+//
+// Encapsulate to an ML-KEM-1024 recipient public key.
+//
+// ml_kem_1024_encapsulate: func(recipient_public_key_bytes: Uint8Array) -> result<string, error>;
+//
+// Parameters:
+//   recipient_public_key_bytes — raw 1568-byte public key from WasmMlKem1024Keypair.public_key_bytes()
+//
+// Returns a JSON string:
+// {
+//   "ciphertext":    "<base64url>",  // ML-KEM-1024 ciphertext, 1568 bytes (send to recipient)
+//   "shared_secret": "<base64url>"  // 32-byte shared secret (KEEP SECRET)
+// }
+//
+// The base64url-decoded "ciphertext" bytes are passed to WasmMlKem1024Keypair.decapsulate().
+// Throws a JavaScript Error if the public key is invalid.
+
+// -----------------------------------------------------------------------------
+// pqc_kem_version
+// -----------------------------------------------------------------------------
+//
+// Returns the crate version string (e.g. "0.1.0").
+//
+// pqc_kem_version: func() -> string;
+
+// -----------------------------------------------------------------------------
+// primary_algorithm
+// -----------------------------------------------------------------------------
+//
+// Returns the primary algorithm identifier string (e.g. "X25519+ML-KEM-768").
+//
+// primary_algorithm: func() -> string;
+
+// =============================================================================
+// ALGORITHM PARAMETER REFERENCE
+// =============================================================================
+//
+// Algorithm          | Public Key | Ciphertext | Shared Secret | Security Level
+// -------------------|------------|------------|---------------|---------------
+// ML-KEM-512         |   800 B    |   768 B    |    32 B       | Level 1 (AES-128)
+// ML-KEM-768         |  1184 B    |  1088 B    |    32 B       | Level 3 (AES-192)
+// ML-KEM-1024        |  1568 B    |  1568 B    |    32 B       | Level 5 (AES-256)
+// X25519+ML-KEM-768  |  1216 B*   |  1120 B*   |    32 B       | Classical+PQC
+//
+// * Hybrid sizes: X25519 (32 B) + ML-KEM-768 component. Keys distributed as JSON.
+//   Shared secret is always 32 bytes regardless of algorithm (HKDF output for hybrid).
+
+// =============================================================================
+// JAVASCRIPT USAGE EXAMPLE
+// =============================================================================
+//
+// ─── Setup ───────────────────────────────────────────────────────────────────
+//
+// import init, {
+//   WasmHybridKemKeypair,
+//   WasmMlKem512Keypair,
+//   WasmMlKem768Keypair,
+//   WasmMlKem1024Keypair,
+//   hybrid_encapsulate,
+//   ml_kem_512_encapsulate,
+//   ml_kem_768_encapsulate,
+//   ml_kem_1024_encapsulate,
+//   pqc_kem_version,
+//   primary_algorithm,
+// } from './pqc_kem.js';
+//
+// await init();  // initializes the WASM module (required before any API call)
+//
+// ─── Hybrid KEM (RECOMMENDED) ────────────────────────────────────────────────
+//
+// // Recipient: generate keypair and publish public key
+// const recipientKeypair = new WasmHybridKemKeypair();
+// const recipientPubKeyJson = recipientKeypair.public_key_json();
+// // → '{"x25519_key":"<b64url>","mlkem_key":"<b64url>","x25519_multibase":"z...","mlkem_multibase":"z..."}'
+//
+// // Sender: encapsulate to recipient's public key
+// const encapResult = JSON.parse(hybrid_encapsulate(recipientPubKeyJson));
+// const ciphertextJson = JSON.stringify(encapResult.ciphertext);
+// const senderSharedSecret = encapResult.shared_secret;  // base64url, keep secret
+//
+// // Recipient: decapsulate to recover the same shared secret
+// const recipientSharedSecretBytes = recipientKeypair.decapsulate(ciphertextJson);
+// // recipientSharedSecretBytes is a Uint8Array (32 bytes)
+//
+// // Always free keypairs to zeroize secret key material
+// recipientKeypair.free();
+// // Or use TC39 Explicit Resource Management:
+// // using recipientKeypair = new WasmHybridKemKeypair();
+//
+// ─── ML-KEM-768 (standalone) ─────────────────────────────────────────────────
+//
+// // Recipient: generate keypair
+// const mlKemKeypair = new WasmMlKem768Keypair();
+// const pubKeyBytes = mlKemKeypair.public_key_bytes();  // Uint8Array, 1184 bytes
+//
+// // Sender: encapsulate
+// const mlEncapResult = JSON.parse(ml_kem_768_encapsulate(pubKeyBytes));
+// // mlEncapResult = { ciphertext: "<base64url>", shared_secret: "<base64url>" }
+//
+// // Recipient: decode ciphertext and decapsulate
+// import { fromBase64Url } from '<your-base64url-lib>';
+// const ctBytes = fromBase64Url(mlEncapResult.ciphertext);  // Uint8Array, 1088 bytes
+// const sharedSecretBytes = mlKemKeypair.decapsulate(ctBytes);  // Uint8Array, 32 bytes
+//
+// mlKemKeypair.free();
+//
+// ─── Utility ─────────────────────────────────────────────────────────────────
+//
+// console.log(pqc_kem_version());    // e.g. "0.1.0"
+// console.log(primary_algorithm());  // e.g. "X25519+ML-KEM-768"
+//
+// =============================================================================

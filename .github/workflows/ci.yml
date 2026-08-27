@@ -1,0 +1,172 @@
+name: CI
+
+# Clean-room build verification (Linear 0X3-31 / P2-05).
+#
+# The original AC asked for a build "on a machine that did not author the
+# fix" -- not a real gate for a solo implementer. This workflow is the
+# actual mechanism: every push gets a genuinely fresh GitHub-hosted runner
+# (fresh checkout, fresh toolchain install, no local state carried over from
+# any prior run) instead of a trust-me claim. No dependency or build caching
+# is used here on purpose -- adding it back would quietly reintroduce the
+# "stale local state" problem this workflow exists to rule out.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Private repo, metered Actions minutes. This dedupes two independent
+# sources of wasted runs: (1) pushing several times in a row leaves earlier,
+# superseded runs grinding away instead of being cancelled, and (2) a push
+# to a branch with an open PR fires both a `push` run and a `pull_request`
+# synchronize run for the same commit. Those two land in different
+# concurrency groups on their own (github.ref is refs/heads/<branch> for
+# push vs. refs/pull/<n>/merge for pull_request), so the concurrency block
+# alone can't merge them -- restricting `push` to `main` is what actually
+# stops the pair, since feature-branch commits then only trigger the
+# pull_request run. Convention on this initiative is to open the PR early
+# and land commits into it, so every active branch has one; a branch with
+# no open PR gets no CI, which is accepted.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Default-feature build and test. This is the crate's real, supported
+  # surface and must always pass cleanly on a from-scratch checkout.
+  default-build-test:
+    name: Default features (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record clone-to-green start time
+        run: echo "CI_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build (default features)
+        run: cargo build --locked --verbose
+
+      - name: cargo test (default features)
+        run: cargo test --locked --verbose
+
+      - name: Record clone-to-green time
+        run: |
+          END_EPOCH=$(date +%s)
+          ELAPSED=$((END_EPOCH - CI_START_EPOCH))
+          echo "Clone-to-green (fresh checkout -> default build+test passing): ${ELAPSED}s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Builds against the exact MSRV declared in Cargo.toml's `rust-version`
+  # (P2-09 / Linear 0X3-35). Determined empirically, not guessed: Rust 1.84.0
+  # fails outright (block-buffer v0.12.1 requires the `edition2024` Cargo
+  # feature, stabilized in 1.85), while 1.85.0 builds and tests cleanly. This
+  # job pins the toolchain to exactly that version -- not `stable` -- so it
+  # goes red the moment a future change (this crate's code or a dependency
+  # bump) relies on anything newer than the declared MSRV.
+  msrv-build-test:
+    name: MSRV (Rust 1.85.0, build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.85.0 (exact MSRV toolchain, fresh, no cache)
+        uses: dtolnay/rust-toolchain@1.85.0
+
+      - name: cargo build (default features, MSRV toolchain)
+        run: cargo build --locked --verbose
+
+      - name: cargo test (default features, MSRV toolchain)
+        run: cargo test --locked --verbose
+
+  # --all-features is EXPECTED to fail on this crate: hqc, bike, and
+  # mceliece are gated behind deliberate compile_error! stubs (P2-01)
+  # because their underlying pqcrypto-* dependencies don't implement what
+  # this crate calls against. This job asserts that contract in both
+  # directions -- it fails if --all-features starts passing (the gates were
+  # silently removed/fixed without telling this workflow), and it fails if
+  # the failure output stops being exactly those three named messages (some
+  # other, unrelated break got buried underneath them).
+  all-features-must-fail-cleanly:
+    name: --all-features (must fail with exactly hqc/bike/mceliece)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build --all-features (expect exactly 3 named compile_error!s)
+        run: |
+          set +e
+          OUTPUT=$(cargo build --all-features --locked 2>&1)
+          EXIT_CODE=$?
+          set -e
+          echo "$OUTPUT"
+
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "::error::--all-features succeeded, but it is supposed to fail. The hqc/bike/mceliece compile_error! gates (P2-01) appear to have been removed or the underlying pqcrypto-* deps were fixed -- update this workflow (and the crate's docs) if that's intentional."
+            exit 1
+          fi
+
+          FAILED=0
+          for feature in hqc bike mceliece; do
+            if ! echo "$OUTPUT" | grep -qE "The \`${feature}\` feature is not yet implemented"; then
+              echo "::error::--all-features failed, but did not contain the expected compile_error! message naming the '${feature}' feature. This is a regression: --all-features must fail for exactly the three known/intended reasons, not an unrelated break."
+              FAILED=1
+            fi
+          done
+
+          if ! echo "$OUTPUT" | grep -qE "due to 3 previous error"; then
+            echo "::error::--all-features did not fail with exactly 3 errors (one per gated feature: hqc, bike, mceliece). Either fewer than 3 fired, or additional unrelated errors are present."
+            FAILED=1
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "--all-features failed as expected: exactly the three intended compile_error! messages (hqc, bike, mceliece), nothing else."
+
+  # Builds and tests the actual PACKAGED artifact (what `cargo add` /
+  # crates.io consumers get), not the working tree. `cargo package`
+  # re-verifies by extracting the package into target/package/<name>-<ver>/
+  # and building there; we then run tests from that same extracted
+  # directory so both build and test exercise what .gitignore/exclude rules
+  # actually ship, not the live source tree.
+  packaged-artifact:
+    name: Packaged artifact (cargo package build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo package --list (inspect what ships)
+        run: cargo package --list --locked
+
+      - name: cargo package (build + verify the packaged artifact)
+        run: cargo package --locked
+
+      - name: Locate extracted package directory
+        id: pkg
+        run: |
+          PKG_DIR=$(find target/package -maxdepth 1 -type d -name 'pqc-kem-*' | head -n1)
+          if [ -z "$PKG_DIR" ]; then
+            echo "::error::Could not find extracted package directory under target/package/"
+            exit 1
+          fi
+          echo "dir=$PKG_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: cargo test against the packaged artifact
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: cargo test --locked --verbose

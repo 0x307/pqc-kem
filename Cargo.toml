@@ -1,0 +1,138 @@
+[package]
+name        = "pqc-kem"
+version     = "0.1.0"
+edition     = "2021"
+rust-version = "1.85"
+authors     = ["Kenneth Harper"]
+description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — standalone WASM-compatible"
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/0x307/pqc-kem"
+keywords    = ["post-quantum", "kem", "ml-kem", "wasm", "cryptography"]
+categories  = ["cryptography", "wasm"]
+
+[lib]
+name       = "pqc_kem"
+crate-type = ["cdylib", "rlib"]
+
+# ── Core PQC — Pure Rust, no_std capable, WASM-compatible ────────────────────
+
+[dependencies]
+# NIST FIPS 203 — ML-KEM-512/768/1024 (pure Rust, audited, no_std)
+ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
+
+# Classical hybrid component — X25519 (pure Rust, no_std)
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+
+# KDF — HKDF-SHA256 for hybrid shared secret derivation (pure Rust, no_std)
+hkdf = { version = "0.12", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
+
+# Symmetric encryption post-KEM (pure Rust, no_std)
+aes-gcm          = { version = "0.10", default-features = false, features = ["aes"] }
+chacha20poly1305 = { version = "0.10", default-features = false }
+
+# Encoding — no_std compatible
+base64ct = { version = "1", default-features = false, features = ["alloc"] }
+hex      = { version = "0.4", default-features = false, features = ["alloc"] }
+
+# Multibase encoding for DID Documents (bs58)
+bs58 = { version = "0.5", default-features = false, features = ["alloc"] }
+
+# RNG abstraction — caller provides RNG, no OsRng hardcoding
+rand_core = { version = "0.6", default-features = false }
+
+# Serialization — no_std with alloc
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+# Error handling — no_std compatible
+thiserror = { version = "2", default-features = false }
+
+# Zeroize secret key material on drop
+zeroize = { version = "1", default-features = false, features = ["derive"] }
+
+# Constant-time comparison
+subtle = { version = "2", default-features = false }
+
+# no_std global allocator — required only when `std` is disabled, since this
+# crate's crate-type includes `cdylib`: building that artifact standalone
+# (e.g. `cargo build --no-default-features`) requires the crate itself to
+# supply a global allocator and panic handler, there being no downstream
+# binary crate to supply one. Same allocator libstd itself uses on wasm32.
+dlmalloc = { version = "0.2", default-features = false, features = ["global"] }
+
+# Optional: WASM bindings
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys       = { version = "0.3", optional = true }
+
+# Optional: WASM entropy (required for getrandom in wasm32-unknown-unknown)
+getrandom = { version = "0.2", optional = true }
+
+# Optional: HQC (NIST 2025 standard) — NOT YET IMPLEMENTED, will emit compile_error!
+# pqcrypto-hqc 0.1's published API does not expose the hqc128/192/256 modules
+# this crate calls against; dep kept for when a real implementation lands.
+pqcrypto-hqc    = { version = "0.1", optional = true }
+pqcrypto-traits = { version = "0.3", optional = true }
+
+# Optional: Classic McEliece (NIST Round 4 alternate) — NOT YET IMPLEMENTED, will emit compile_error!
+# pqcrypto-classicmceliece's published API does not match this crate's calls
+# against mceliece348864; dep kept for when a real implementation lands.
+pqcrypto-classicmceliece = { version = "0.2", optional = true }
+
+[features]
+default = ["std"]
+
+# std: enables std-dependent trait impls
+std = [
+    "sha2/std",
+    "sha3/std",
+    "hkdf/std",
+    "serde/std",
+    "serde_json/std",
+    "zeroize/std",
+    "ml-kem/getrandom",
+]
+
+# wasm: enables wasm32-unknown-unknown target + JS entropy
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:getrandom",
+    "getrandom/js",
+    "rand_core/getrandom",
+]
+
+# hqc: HQC-128/192/256 — NOT YET IMPLEMENTED, will emit compile_error!
+hqc = ["dep:pqcrypto-hqc", "dep:pqcrypto-traits"]
+
+# bike: BIKE — NOT YET IMPLEMENTED, will emit compile_error! (no dep needed)
+bike = []
+
+# mceliece: Classic McEliece — NOT YET IMPLEMENTED, will emit compile_error!
+mceliece = ["dep:pqcrypto-classicmceliece", "dep:pqcrypto-traits"]
+
+# docs.rs builds with default features (std) plus `wasm`, so the wasm-bindgen
+# API surface renders alongside the rest without a manual `--features` step.
+# `hqc`, `bike`, and `mceliece` are deliberately excluded: each fails to
+# compile by design (P2-01 compile_error! gates) since their underlying
+# pqcrypto-* dependencies don't implement what this crate calls against, so
+# `--all-features` is not usable here and would break the docs.rs build.
+[package.metadata.docs.rs]
+features = ["wasm"]
+
+[dev-dependencies]
+rand = "0.8"
+hex-literal = "0.4"
+
+# `panic = "abort"` is required by the no_std build path (see the panic
+# handler in src/lib.rs — core's unwind runtime isn't available without std).
+# This applies crate-wide, including to `cargo test` under default features:
+# a panicking test aborts the whole test binary rather than being caught and
+# reported individually. Acceptable here since nothing in this crate uses
+# `#[should_panic]` or `catch_unwind`.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
