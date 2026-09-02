@@ -1,2 +1,9 @@
 /build
 /target
+
+# CRA-1: pqc-kem-wasm/ and tests/downstream-consumer-fixture/ are separate
+# Cargo packages (each its own [workspace] root, own target/), not just
+# nested build output of the root crate -- the root-anchored /target above
+# doesn't reach them.
+pqc-kem-wasm/target
+tests/downstream-consumer-fixture/target

@@ -1,6 +1,12 @@
-//! WASM bindings for `pqc-kem` via `wasm-bindgen`.
+//! WASM/JS bindings for `pqc-kem`, via `wasm-bindgen`.
 //!
-//! These bindings expose the KEM operations to JavaScript/TypeScript.
+//! This crate IS the final linked artifact (`crate-type = ["cdylib"]`, see
+//! Cargo.toml) — the standalone `.wasm` module `build.ps1`/`build-wasm.ps1`
+//! produce. It depends on `pqc-kem` as an ordinary `no_std` library and
+//! supplies the `#[global_allocator]`/`#[panic_handler]` lang items that a
+//! standalone `no_std` binary needs (`pqc-kem` itself never does — see its
+//! own src/lib.rs).
+//!
 //! All byte arrays cross the WASM boundary as `Uint8Array`.
 //! All errors are returned as JavaScript `Error` objects (via `Result<T, JsValue>`).
 //!
@@ -22,25 +28,78 @@
 //! const recovered = keypair.decapsulate(ciphertext);
 //! ```
 
+#![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
+
+#[cfg(not(feature = "std"))]
 extern crate alloc;
+#[cfg(not(feature = "std"))]
 use alloc::{format, string::{String, ToString}, vec::Vec};
+
+// ── no_std runtime hooks ─────────────────────────────────────────────────────
+// Unlike pqc-kem (an ordinary rlib library that must never claim these --
+// see its src/lib.rs), this crate's crate-type is unconditionally
+// ["cdylib"]: it IS the final linked artifact by construction, so it's
+// always correct for it to supply them when std is off.
+
+#[cfg(not(feature = "std"))]
+#[global_allocator]
+static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
+
+#[cfg(not(feature = "std"))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
 
 use wasm_bindgen::prelude::*;
 
-use crate::fips203::{HybridKemKeypair, MlKem512Keypair, MlKem768Keypair, MlKem1024Keypair};
-use crate::types::{HybridKemCiphertext, HybridPublicKey, KemAlgorithm, KemPublicKey};
+use pqc_kem::fips203::{HybridKemKeypair, MlKem512Keypair, MlKem768Keypair, MlKem1024Keypair};
+use pqc_kem::types::{HybridKemCiphertext, HybridPublicKey, KemAlgorithm, KemCiphertext, KemPublicKey};
 
 // ── RNG for WASM ──────────────────────────────────────────────────────────────
-// In WASM, we use getrandom which hooks into window.crypto.getRandomValues()
-// The `getrandom/js` feature must be enabled (set in Cargo.toml under [features] wasm).
+// In WASM, entropy comes from window.crypto.getRandomValues() via getrandom
+// 0.4's `wasm_js` backend. Not `rand_core::OsRng` + getrandom 0.2: that
+// combination pulls in `js-sys`'s default (`std`) feature transitively
+// (getrandom 0.2.17's own wasm32 `js-sys` dependency edge doesn't disable
+// it), which links real `std` into this artifact -- fatal for the no_std
+// build, whose whole point is supplying std's lang items itself (above).
+// getrandom 0.4's `wasm_js` backend disables default features throughout
+// its own dependency edges, so it doesn't have this problem.
 
-fn wasm_rng() -> rand_core::OsRng {
-    rand_core::OsRng
+struct WasmCryptoRng;
+
+impl rand_core::RngCore for WasmCryptoRng {
+    fn next_u32(&mut self) -> u32 {
+        rand_core::impls::next_u32_via_fill(self)
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        rand_core::impls::next_u64_via_fill(self)
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        getrandom::fill(dest).expect("browser CSPRNG (getrandom) failed");
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
+        getrandom::fill(dest).map_err(|_| {
+            rand_core::Error::from(
+                core::num::NonZeroU32::new(rand_core::Error::CUSTOM_START).unwrap(),
+            )
+        })
+    }
+}
+
+impl rand_core::CryptoRng for WasmCryptoRng {}
+
+fn wasm_rng() -> WasmCryptoRng {
+    WasmCryptoRng
 }
 
 // ── Error Conversion ──────────────────────────────────────────────────────────
 
-fn to_js_error(e: crate::error::KemError) -> JsValue {
+fn to_js_error(e: pqc_kem::KemError) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
@@ -163,7 +222,6 @@ impl WasmMlKem512Keypair {
     /// Decapsulate a ciphertext (768 bytes), returning the 32-byte shared secret.
     #[wasm_bindgen]
     pub fn decapsulate(&self, ciphertext_bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
-        use crate::types::KemCiphertext;
         let ct = KemCiphertext::new(KemAlgorithm::MlKem512, ciphertext_bytes.to_vec());
         let ss = self.inner.decapsulate(&ct).map_err(to_js_error)?;
         Ok(ss.bytes.clone())
@@ -221,7 +279,6 @@ impl WasmMlKem768Keypair {
     /// Decapsulate a ciphertext (1088 bytes), returning the 32-byte shared secret.
     #[wasm_bindgen]
     pub fn decapsulate(&self, ciphertext_bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
-        use crate::types::KemCiphertext;
         let ct = KemCiphertext::new(KemAlgorithm::MlKem768, ciphertext_bytes.to_vec());
         let ss = self.inner.decapsulate(&ct).map_err(to_js_error)?;
         Ok(ss.bytes.clone())
@@ -279,7 +336,6 @@ impl WasmMlKem1024Keypair {
     /// Decapsulate a ciphertext (1568 bytes), returning the 32-byte shared secret.
     #[wasm_bindgen]
     pub fn decapsulate(&self, ciphertext_bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
-        use crate::types::KemCiphertext;
         let ct = KemCiphertext::new(KemAlgorithm::MlKem1024, ciphertext_bytes.to_vec());
         let ss = self.inner.decapsulate(&ct).map_err(to_js_error)?;
         Ok(ss.bytes.clone())
@@ -309,11 +365,11 @@ pub fn ml_kem_1024_encapsulate(recipient_public_key_bytes: &[u8]) -> Result<Stri
 /// Returns the crate version string.
 #[wasm_bindgen]
 pub fn pqc_kem_version() -> String {
-    crate::VERSION.into()
+    pqc_kem::VERSION.into()
 }
 
 /// Returns the primary algorithm identifier string.
 #[wasm_bindgen]
 pub fn primary_algorithm() -> String {
-    crate::PRIMARY_ALGORITHM.into()
+    pqc_kem::PRIMARY_ALGORITHM.into()
 }

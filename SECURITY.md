@@ -39,13 +39,13 @@ know about *before* you enable it, not after.
 ### Known and accepted advisories
 
 **The `cargo-deny` workflow is expected to fail, and a red run there is the correct,
-intended state — not a broken build.** The four advisories below are known, accepted, and
+intended state — not a broken build.** The three advisories below are known, accepted, and
 deliberately *not* suppressed: `advisories.ignore` in `deny.toml` is empty, so nothing is
 hidden from the tool. That is what keeps a genuinely *new* advisory visible instead of
 letting it land silently on top of an already-accepted one. The `CI` workflow is separate
 and is the one that must stay green.
 
-All four have the same root cause. The [PQClean](https://github.com/PQClean/PQClean)
+All three have the same root cause. The [PQClean](https://github.com/PQClean/PQClean)
 project — the upstream C implementations behind the `pqcrypto-*` crate family — is
 [being archived in or after July 2026](https://github.com/PQClean/PQClean/issues/604), so
 every binding in that family inherits an `unmaintained` advisory
@@ -53,33 +53,47 @@ every binding in that family inherits an `unmaintained` advisory
 
 | Advisory | Crate | Reachable only via |
 |---|---|---|
-| [RUSTSEC-2026-0162](https://rustsec.org/advisories/RUSTSEC-2026-0162) | `pqcrypto-traits` | `hqc` or `mceliece` |
-| [RUSTSEC-2026-0163](https://rustsec.org/advisories/RUSTSEC-2026-0163) | `pqcrypto-internals` | `hqc` or `mceliece` (transitive) |
+| [RUSTSEC-2026-0162](https://rustsec.org/advisories/RUSTSEC-2026-0162) | `pqcrypto-traits` | `mceliece` |
+| [RUSTSEC-2026-0163](https://rustsec.org/advisories/RUSTSEC-2026-0163) | `pqcrypto-internals` | `mceliece` (transitive) |
 | [RUSTSEC-2026-0167](https://rustsec.org/advisories/RUSTSEC-2026-0167) | `pqcrypto-classicmceliece` | `mceliece` |
-| [RUSTSEC-2026-0168](https://rustsec.org/advisories/RUSTSEC-2026-0168) | `pqcrypto-hqc` | `hqc` |
+
+**Update (P2/alpha-001 HQC implementation pass):** `hqc` no longer depends on the
+`pqcrypto-*` family at all — it moved to `liboqs` (the `oqs` crate) instead, for reasons
+unrelated to this advisory (see `CHANGELOG.md` and `src/hqc/mod.rs` module docs: a
+correctness/panic-safety defect in `pqcrypto-hqc`'s `decapsulate()`, not this advisory).
+**RUSTSEC-2026-0168 (`pqcrypto-hqc`) is therefore removed from this table** — it is no
+longer a dependency of this crate in any configuration, not merely an accepted advisory.
+`cargo deny check` was re-run after the swap and confirmed: no new advisory, license, ban,
+or source finding from `oqs`/`oqs-sys`/`liboqs` — `bans ok, licenses ok, sources ok`, only
+the three `mceliece`-reachable `pqcrypto-*` advisories below remain.
 
 **Why this is an accept and not a shrug:**
 
-- **None of these are in the default build.** `default = ["std"]`; `hqc` and `mceliece` are
-  separate opt-in features. A plain `cargo build` / `cargo test` — what a `cargo add
-  pqc-kem` consumer gets — never links any of these four crates.
-- **Those features don't currently build at all.** `hqc`, `bike`, and `mceliece` are gated
-  behind deliberate `compile_error!` stubs, because the published `pqcrypto-*` APIs don't
-  expose what this crate calls against. So today the advisories aren't merely opt-in, they
-  are unreachable: there is no configuration of this crate that ships that code. CI asserts
-  this in both directions.
+- **None of these are in the default build.** `default = ["std"]`; `mceliece` is a
+  separate opt-in feature. A plain `cargo build` / `cargo test` — what a `cargo add
+  pqc-kem` consumer gets — never links any of these three crates. (`hqc` is also opt-in,
+  but is real and working — see the `hqc` feature docs — and does not link `pqcrypto-*`.)
+- **`mceliece` doesn't currently build at all.** It is gated behind a deliberate
+  `compile_error!` stub, because the published `pqcrypto-classicmceliece` API doesn't
+  expose what this crate calls against. So today these three advisories aren't merely
+  opt-in, they are unreachable: there is no configuration of this crate that ships that
+  code. CI asserts this.
 - **These are maintenance-capacity advisories, not known vulnerabilities.** No CVE, no
   exploit — upstream is winding down.
 
 **Revisit triggers**, so "accepted" doesn't quietly become "forgotten":
 
-- **`pqcrypto-hqc` / `pqcrypto-classicmceliece`** — revisit if and when HQC or Classic
-  McEliece gets a real, non-stub implementation here. The advisory is inherited from
-  PQClean's archival, not from anything specific to how this crate uses them; any real
-  implementation needs a maintained source regardless.
-- **`pqcrypto-traits` / `pqcrypto-internals`** — these resolve on their own if the two
-  bindings above are replaced, since they are shared plumbing for that family.
+- **`pqcrypto-classicmceliece`** — revisit if and when Classic McEliece gets a real,
+  non-stub implementation here (following the same live-verification approach used for
+  HQC — don't trust the "doesn't match the API" claim without re-checking it against the
+  then-current published `pqcrypto-classicmceliece`, and check for `liboqs`-equivalent
+  panic-safety issues before committing to it as the dependency). The advisory is
+  inherited from PQClean's archival, not from anything specific to how this crate uses it;
+  any real implementation needs a maintained source regardless.
+- **`pqcrypto-traits` / `pqcrypto-internals`** — these resolve on their own if the
+  `mceliece` binding above is replaced, since they are shared plumbing for that family.
 - **Anything failing beyond this table** — a new RUSTSEC ID, a license, a ban, or a source
   — is *not* covered by this acceptance and needs its own decision recorded here.
 
-Decision recorded 2026-08-24 (P1-06); applied to this repo 2026-08-25 (P2-07).
+Decision recorded 2026-08-24 (P1-06); applied to this repo 2026-08-25 (P2-07); updated for
+the `hqc` → `liboqs` dependency swap during the P2/alpha-001 HQC implementation pass.

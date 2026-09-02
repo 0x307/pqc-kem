@@ -1,0 +1,70 @@
+# pqc-kem-wasm — WASM/JS bindings and the standalone `.wasm` artifact for
+# pqc-kem (CRA-1). Split out of the main `pqc-kem` crate: `pqc-kem` is a
+# pure library (rlib-only, never the final linked artifact -- see its
+# Cargo.toml and src/lib.rs), so it can never validly supply the
+# `#[global_allocator]`/`#[panic_handler]` lang items a standalone `no_std`
+# WASM cdylib needs. This crate exists specifically to BE that final
+# artifact: it's the only place in this repo where crate-type = ["cdylib"]
+# and the lang-item hooks belong.
+#
+# Independent workspace root (see [workspace] below) -- not a member of any
+# workspace pqc-kem itself might join later, and not published to crates.io
+# (the shippable artifact is wasm-pack's `dist/` output, not this crate).
+
+[package]
+name        = "pqc-kem-wasm"
+version     = "0.2.0"
+edition     = "2021"
+rust-version = "1.85"
+authors     = ["Kenneth Harper"]
+description = "WASM/JS bindings and standalone .wasm artifact for pqc-kem"
+license     = "MIT OR Apache-2.0"
+repository  = "https://github.com/0x307/pqc-kem"
+publish     = false
+
+[lib]
+# Keep the compiled library name as `pqc_kem` (not `pqc_kem_wasm`) so
+# wasm-pack's output filenames (pqc_kem.js, pqc_kem_bg.wasm, ...) and the
+# npm package's public JS API are unchanged by this split.
+name       = "pqc_kem"
+crate-type = ["cdylib"]
+
+[dependencies]
+pqc-kem = { path = "..", default-features = false }
+
+# `default-features = false`: wasm-bindgen's default `std` feature would
+# link real `std` into this artifact, colliding with the `#[panic_handler]`/
+# `#[global_allocator]` this crate supplies below for the no_std build.
+# Documented by wasm-bindgen itself as no_std-compatible with `std` off.
+wasm-bindgen = { version = "0.2", default-features = false }
+
+# WASM entropy: window.crypto.getRandomValues() via getrandom 0.4's
+# `wasm_js` backend (see src/lib.rs's WasmCryptoRng). Its own dependency
+# edges disable default features throughout, so (unlike getrandom 0.2's
+# `js` feature) it doesn't drag `std` in transitively.
+getrandom = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+base64ct  = { version = "1", default-features = false, features = ["alloc"] }
+rand_core = { version = "0.6", default-features = false }
+
+# no_std global allocator. Unlike pqc-kem's now-removed `standalone`
+# feature, this is unconditional here: this crate's crate-type is ALWAYS
+# ["cdylib"] -- it IS the final linked artifact by construction, not an
+# opt-in state to infer.
+dlmalloc = { version = "0.2", default-features = false, features = ["global"] }
+
+[features]
+default = ["std"]
+
+# std: native/no-wasm iteration convenience (e.g. `cargo check` without a
+# wasm32 target installed). The actual shipped artifact is always built
+# with `--no-default-features` (see build.ps1 / build-wasm.ps1).
+std = ["pqc-kem/std"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[workspace]

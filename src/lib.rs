@@ -1,6 +1,9 @@
 //! # pqc-kem — Post-Quantum Key Encapsulation Mechanisms
 //!
-//! A standalone, WASM-compatible library implementing post-quantum KEM algorithms:
+//! A pure Rust, `no_std`-capable library implementing post-quantum KEM
+//! algorithms, meant to be imported into other builds — not built or run on
+//! its own. (For the WASM/JS bindings and the standalone `.wasm` artifact,
+//! see the sibling `pqc-kem-wasm` crate.)
 //!
 //! - **ML-KEM** (NIST FIPS 203) — Primary standard, pure Rust, WASM-native
 //!   - [`fips203::MlKem512Keypair`] — Security Level 1
@@ -9,7 +12,7 @@
 //!   - [`fips203::HybridKemKeypair`] — X25519 + ML-KEM-768 hybrid (primary construction)
 //!
 //! - **HQC** (NIST 2025) — Code-based alternative, gated behind `hqc` feature.
-//!   NOT YET IMPLEMENTED: enabling `hqc` fails the build by design.
+//!   Real implementation via `liboqs` (native targets only, not WASM).
 //!   - [`hqc::Hqc128Keypair`], [`hqc::Hqc192Keypair`], [`hqc::Hqc256Keypair`]
 //!
 //! - **BIKE** (NIST Round 4 alternate) — gated behind `bike` feature.
@@ -45,47 +48,35 @@
 //! assert_eq!(sender_ss.bytes, recipient_ss.bytes);
 //! ```
 //!
-//! ## WASM Usage
+//! ## WASM Target Support
 //!
-//! Build with the `wasm` feature for `wasm32-unknown-unknown` targets:
-//! ```toml
-//! pqc-kem = { version = "0.1", features = ["wasm"] }
-//! ```
+//! This crate builds cleanly as an ordinary library dependency for
+//! `wasm32-unknown-unknown` (e.g. from inside a `wasm-bindgen`/`wasm-pack`
+//! project of your own) — no special feature needed; the `getrandom`
+//! backend required for that target is wired in automatically (see
+//! Cargo.toml). It does **not** ship JS bindings or build as a `.wasm`
+//! artifact itself — that packaging lives in the sibling `pqc-kem-wasm`
+//! crate, which depends on this one.
 //!
 //! ## `no_std` Support
 //!
-//! This crate is `no_std`-compatible with `alloc`. Disable the `std` feature:
+//! This crate is `no_std`-compatible with `alloc`, and is **always** just a
+//! library — it never defines `#[global_allocator]` or `#[panic_handler]`
+//! itself (a library crate can't validly infer from its own feature flags
+//! whether the program linking it has `std` elsewhere; only the final
+//! binary knows that, and only it should supply those). Disable the `std`
+//! feature to use the `no_std` path:
 //! ```toml
-//! pqc-kem = { version = "0.1", default-features = false }
+//! pqc-kem = { version = "0.2", default-features = false }
 //! ```
+//! The program embedding this crate is responsible for supplying its own
+//! allocator and panic handler if it, in turn, has no `std` either.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
-
-// ── no_std runtime hooks ─────────────────────────────────────────────────────
-//
-// This crate's `crate-type` includes `cdylib`, so `cargo build` compiles it as
-// a standalone linked artifact, not just an `rlib` dependency of some other
-// binary. Without `std`, that final artifact needs its own global allocator
-// and panic handler — there's no downstream crate to supply them (unlike a
-// typical no_std *library* that expects its eventual binary crate to provide
-// these). This is why the no_std path is meant for building this crate itself
-// as the final artifact (the WASM cdylib via `build.ps1`), not for embedding
-// it as a no_std dependency inside another program that defines its own
-// allocator/panic handler — doing so would collide with these at link time.
-
-#[cfg(not(feature = "std"))]
-#[global_allocator]
-static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
-
-#[cfg(not(feature = "std"))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
-}
 
 // ── Public Modules ────────────────────────────────────────────────────────────
 
@@ -98,7 +89,8 @@ pub mod types;
 /// ML-KEM (NIST FIPS 203) — pure Rust, WASM-native.
 pub mod fips203;
 
-/// HQC (NIST 2025 standard) — gated behind `hqc` feature, NOT YET IMPLEMENTED.
+/// HQC (NIST 2025 standard) — gated behind `hqc` feature. Real implementation
+/// via `liboqs`, native targets only (not WASM).
 pub mod hqc;
 
 /// BIKE (NIST Round 4 alternate) — gated behind `bike` feature, NOT YET IMPLEMENTED.
@@ -109,10 +101,6 @@ pub mod mceliece;
 
 /// NTRU — eliminated from NIST standardization. Deprecation marker only.
 pub mod ntru;
-
-/// WASM bindings via `wasm-bindgen` — requires `wasm` feature.
-#[cfg(feature = "wasm")]
-pub mod wasm;
 
 // ── Top-Level Re-exports ──────────────────────────────────────────────────────
 

@@ -84,9 +84,14 @@ fn kem_algorithm_ciphertext_sizes() {
     assert_eq!(KemAlgorithm::MlKem768.ciphertext_size(), 1088);
     assert_eq!(KemAlgorithm::MlKem1024.ciphertext_size(), 1568);
     assert_eq!(KemAlgorithm::HybridX25519MlKem768.ciphertext_size(), 32 + 1088); // 1120
-    assert_eq!(KemAlgorithm::Hqc128.ciphertext_size(), 4481);
+    // HQC-128/256 corrected from 4481/14469 to 4433/14421 during the real
+    // HQC implementation pass (P2/alpha-001) -- verified live against both
+    // `pqcrypto-hqc` 0.2.2 and `liboqs` 0.13.0 (independent implementations
+    // of the same NIST submission, which agree). HQC-192 was already
+    // correct. See src/hqc/mod.rs module docs for the full explanation.
+    assert_eq!(KemAlgorithm::Hqc128.ciphertext_size(), 4433);
     assert_eq!(KemAlgorithm::Hqc192.ciphertext_size(), 8978);
-    assert_eq!(KemAlgorithm::Hqc256.ciphertext_size(), 14469);
+    assert_eq!(KemAlgorithm::Hqc256.ciphertext_size(), 14421);
     assert_eq!(KemAlgorithm::Bike.ciphertext_size(), 0);
     assert_eq!(KemAlgorithm::ClassicMceliece.ciphertext_size(), 0);
 }
