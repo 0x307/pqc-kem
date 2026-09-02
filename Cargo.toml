@@ -1,6 +1,6 @@
 [package]
 name        = "pqc-kem"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2021"
 rust-version = "1.85"
 authors     = ["Kenneth Harper"]
@@ -69,16 +69,38 @@ js-sys       = { version = "0.3", optional = true }
 # Optional: WASM entropy (required for getrandom in wasm32-unknown-unknown)
 getrandom = { version = "0.2", optional = true }
 
-# Optional: HQC (NIST 2025 standard) — NOT YET IMPLEMENTED, will emit compile_error!
-# pqcrypto-hqc 0.1's published API does not expose the hqc128/192/256 modules
-# this crate calls against; dep kept for when a real implementation lands.
-pqcrypto-hqc    = { version = "0.1", optional = true }
-pqcrypto-traits = { version = "0.3", optional = true }
+# Optional: HQC (NIST 2025 standard) — real implementation via `liboqs`.
+#
+# `pqcrypto-hqc` was re-verified live during implementation (P2/alpha-001):
+# the current published 0.2.x API DOES match this module's calls (the old
+# "82 compile errors against pqcrypto-hqc 0.1" comment is stale -- 0.1 is no
+# longer what gets resolved). However, live testing surfaced a more serious,
+# *new* defect: `pqcrypto-hqc` 0.2.2's `decapsulate()` wraps the PQClean C
+# reference's informational "decapsulation check failed" return code (the
+# FO-transform's normal, expected implicit-rejection outcome for ANY
+# ciphertext/secret-key mismatch -- not a rare adversarial edge case) in a
+# hard `assert_eq!(.., 0)`, which panics/aborts the process instead of
+# surfacing an error. That is unacceptable for a KEM whose whole purpose is
+# decapsulating counterparty-supplied ciphertexts. `oqs` (liboqs-rust)
+# wraps the identical underlying libc return code as a proper `Result`
+# (verified live: neither a bit-flipped ciphertext nor an honestly
+# mismatched secret key panics; both cleanly return `Err`). Byte sizes are
+# identical between the two bindings (both wrap the same NIST HQC
+# parameter sets), so this is a drop-in-equivalent, safer choice -- not a
+# design compromise. See CHANGELOG.md and README.md for the full writeup.
+#
+# `hqc` alone (no `kems`/`sigs`/`openssl` default features) needs only a C
+# toolchain + `cmake` + `libclang`(bindgen) to build liboqs's vendored HQC
+# sources -- verified NOT to require OpenSSL when scoped this narrowly.
+oqs = { version = "0.11", default-features = false, features = ["hqc", "std"], optional = true }
 
 # Optional: Classic McEliece (NIST Round 4 alternate) — NOT YET IMPLEMENTED, will emit compile_error!
 # pqcrypto-classicmceliece's published API does not match this crate's calls
 # against mceliece348864; dep kept for when a real implementation lands.
+# (Out of scope for the HQC/FN-DSA pass — untouched; `pqcrypto-traits` is
+# still needed here even though `hqc` moved off the pqcrypto-* family.)
 pqcrypto-classicmceliece = { version = "0.2", optional = true }
+pqcrypto-traits           = { version = "0.3", optional = true }
 
 [features]
 default = ["std"]
@@ -103,8 +125,9 @@ wasm = [
     "rand_core/getrandom",
 ]
 
-# hqc: HQC-128/192/256 — NOT YET IMPLEMENTED, will emit compile_error!
-hqc = ["dep:pqcrypto-hqc", "dep:pqcrypto-traits"]
+# hqc: HQC-128/192/256 — real implementation via `liboqs` (the `oqs` crate).
+# Native targets only (C FFI); not wasm32-unknown-unknown compatible.
+hqc = ["dep:oqs"]
 
 # bike: BIKE — NOT YET IMPLEMENTED, will emit compile_error! (no dep needed)
 bike = []
@@ -114,10 +137,15 @@ mceliece = ["dep:pqcrypto-classicmceliece", "dep:pqcrypto-traits"]
 
 # docs.rs builds with default features (std) plus `wasm`, so the wasm-bindgen
 # API surface renders alongside the rest without a manual `--features` step.
-# `hqc`, `bike`, and `mceliece` are deliberately excluded: each fails to
-# compile by design (P2-01 compile_error! gates) since their underlying
-# pqcrypto-* dependencies don't implement what this crate calls against, so
-# `--all-features` is not usable here and would break the docs.rs build.
+# `bike` and `mceliece` are deliberately excluded: they still fail to compile
+# by design (P2-01 compile_error! gates) since their underlying pqcrypto-*
+# dependencies don't implement what this crate calls against. `hqc` is now a
+# real, working feature (see the `oqs` dependency comment above) but is
+# ALSO excluded here: docs.rs's sandboxed build environment does not permit
+# arbitrary C-toolchain/cmake/libclang builds, so `hqc`'s native liboqs
+# build cannot run there regardless of correctness. `--all-features` is
+# still not usable (bike/mceliece compile_error!) and would break the
+# docs.rs build.
 [package.metadata.docs.rs]
 features = ["wasm"]
 

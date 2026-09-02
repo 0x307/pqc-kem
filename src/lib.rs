@@ -9,7 +9,7 @@
 //!   - [`fips203::HybridKemKeypair`] — X25519 + ML-KEM-768 hybrid (primary construction)
 //!
 //! - **HQC** (NIST 2025) — Code-based alternative, gated behind `hqc` feature.
-//!   NOT YET IMPLEMENTED: enabling `hqc` fails the build by design.
+//!   Real implementation via `liboqs` (native targets only, not WASM).
 //!   - [`hqc::Hqc128Keypair`], [`hqc::Hqc192Keypair`], [`hqc::Hqc256Keypair`]
 //!
 //! - **BIKE** (NIST Round 4 alternate) — gated behind `bike` feature.
@@ -98,7 +98,8 @@ pub mod types;
 /// ML-KEM (NIST FIPS 203) — pure Rust, WASM-native.
 pub mod fips203;
 
-/// HQC (NIST 2025 standard) — gated behind `hqc` feature, NOT YET IMPLEMENTED.
+/// HQC (NIST 2025 standard) — gated behind `hqc` feature. Real implementation
+/// via `liboqs`, native targets only (not WASM).
 pub mod hqc;
 
 /// BIKE (NIST Round 4 alternate) — gated behind `bike` feature, NOT YET IMPLEMENTED.

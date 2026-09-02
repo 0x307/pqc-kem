@@ -72,15 +72,24 @@ impl KemAlgorithm {
     }
 
     /// Returns the expected ciphertext size in bytes (0 = variable).
+    ///
+    /// HQC-128/256 sizes were corrected from 4481/14469 to 4433/14421 bytes
+    /// during the P2/alpha-001 HQC implementation pass — verified live
+    /// against both `pqcrypto-hqc` 0.2.2 and `liboqs` 0.13.0 (two
+    /// independent implementations of the same NIST submission, which
+    /// agree). HQC-192's 8978-byte ciphertext was already correct. This
+    /// reflects the HQC round-4/2023 parameter revision to the
+    /// error-correcting code, which changed ciphertext size at the 128- and
+    /// 256-bit levels but not the 192-bit level.
     pub fn ciphertext_size(&self) -> usize {
         match self {
             KemAlgorithm::MlKem512              => 768,
             KemAlgorithm::MlKem768              => 1088,
             KemAlgorithm::MlKem1024             => 1568,
             KemAlgorithm::HybridX25519MlKem768  => 32 + 1088, // 1120
-            KemAlgorithm::Hqc128                => 4481,
+            KemAlgorithm::Hqc128                => 4433,
             KemAlgorithm::Hqc192                => 8978,
-            KemAlgorithm::Hqc256                => 14469,
+            KemAlgorithm::Hqc256                => 14421,
             KemAlgorithm::Bike                  => 0,
             KemAlgorithm::ClassicMceliece       => 0,
         }

@@ -85,16 +85,18 @@ jobs:
       - name: cargo test (default features, MSRV toolchain)
         run: cargo test --locked --verbose
 
-  # --all-features is EXPECTED to fail on this crate: hqc, bike, and
-  # mceliece are gated behind deliberate compile_error! stubs (P2-01)
-  # because their underlying pqcrypto-* dependencies don't implement what
-  # this crate calls against. This job asserts that contract in both
-  # directions -- it fails if --all-features starts passing (the gates were
-  # silently removed/fixed without telling this workflow), and it fails if
-  # the failure output stops being exactly those three named messages (some
-  # other, unrelated break got buried underneath them).
-  all-features-must-fail-cleanly:
-    name: --all-features (must fail with exactly hqc/bike/mceliece)
+  # `hqc` is now REAL and working (P2/alpha-001 HQC implementation pass --
+  # see src/hqc/mod.rs module docs and README.md "Why liboqs and not
+  # pqcrypto-hqc?" for the full writeup). Unlike the default-features job,
+  # this needs a C toolchain, cmake, and libclang (for bindgen) to build
+  # liboqs's vendored HQC sources -- verified NOT to additionally require
+  # OpenSSL when only `hqc` (not oqs's kems/sigs/openssl default groups) is
+  # enabled. ubuntu-latest is expected to already have cmake/clang, so no
+  # extra apt-get install step is included here; if this job goes red on
+  # missing tools rather than a real code issue, that's the first thing to
+  # check.
+  hqc-feature-build-test:
+    name: hqc feature (build + test)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (fresh clone, no cache)
@@ -103,7 +105,34 @@ jobs:
       - name: Install Rust toolchain (fresh, no cache)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: cargo build --all-features (expect exactly 3 named compile_error!s)
+      - name: cargo build --features hqc
+        run: cargo build --features hqc --locked --verbose
+
+      - name: cargo test --features hqc
+        run: cargo test --features hqc --locked --verbose
+
+  # --all-features is EXPECTED to fail on this crate, but only because of
+  # bike and mceliece: they are gated behind deliberate compile_error!
+  # stubs (P2-01) because their underlying pqcrypto-* dependencies don't
+  # implement what this crate calls against. `hqc` is no longer part of
+  # this expected failure -- it is real and compiles (see the dedicated
+  # hqc-feature-build-test job above). This job asserts the (now two-item)
+  # contract in both directions -- it fails if --all-features starts
+  # passing (the remaining gates were silently removed/fixed without
+  # telling this workflow), and it fails if the failure output stops being
+  # exactly those two named messages (some other, unrelated break got
+  # buried underneath them, or hqc unexpectedly started failing again).
+  all-features-must-fail-cleanly:
+    name: --all-features (must fail with exactly bike/mceliece)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build --all-features (expect exactly 2 named compile_error!s)
         run: |
           set +e
           OUTPUT=$(cargo build --all-features --locked 2>&1)
@@ -112,20 +141,25 @@ jobs:
           echo "$OUTPUT"
 
           if [ "$EXIT_CODE" -eq 0 ]; then
-            echo "::error::--all-features succeeded, but it is supposed to fail. The hqc/bike/mceliece compile_error! gates (P2-01) appear to have been removed or the underlying pqcrypto-* deps were fixed -- update this workflow (and the crate's docs) if that's intentional."
+            echo "::error::--all-features succeeded, but it is supposed to fail. The bike/mceliece compile_error! gates (P2-01) appear to have been removed or the underlying pqcrypto-* deps were fixed -- update this workflow (and the crate's docs) if that's intentional."
             exit 1
           fi
 
           FAILED=0
-          for feature in hqc bike mceliece; do
+          for feature in bike mceliece; do
             if ! echo "$OUTPUT" | grep -qE "The \`${feature}\` feature is not yet implemented"; then
-              echo "::error::--all-features failed, but did not contain the expected compile_error! message naming the '${feature}' feature. This is a regression: --all-features must fail for exactly the three known/intended reasons, not an unrelated break."
+              echo "::error::--all-features failed, but did not contain the expected compile_error! message naming the '${feature}' feature. This is a regression: --all-features must fail for exactly the two known/intended reasons, not an unrelated break."
               FAILED=1
             fi
           done
 
-          if ! echo "$OUTPUT" | grep -qE "due to 3 previous error"; then
-            echo "::error::--all-features did not fail with exactly 3 errors (one per gated feature: hqc, bike, mceliece). Either fewer than 3 fired, or additional unrelated errors are present."
+          if echo "$OUTPUT" | grep -qE "The \`hqc\` feature is not yet implemented"; then
+            echo "::error::--all-features failed with the OLD hqc compile_error! stub message. hqc is supposed to be real and working now -- this means either a bad revert or a real regression in the hqc feature."
+            FAILED=1
+          fi
+
+          if ! echo "$OUTPUT" | grep -qE "due to 2 previous error"; then
+            echo "::error::--all-features did not fail with exactly 2 errors (one per gated feature: bike, mceliece). Either fewer/more than 2 fired, or additional unrelated errors are present (e.g. hqc unexpectedly failing, or a real bug)."
             FAILED=1
           fi
 
@@ -133,7 +167,7 @@ jobs:
             exit 1
           fi
 
-          echo "--all-features failed as expected: exactly the three intended compile_error! messages (hqc, bike, mceliece), nothing else."
+          echo "--all-features failed as expected: exactly the two intended compile_error! messages (bike, mceliece), nothing else. hqc compiled fine as part of this build."
 
   # Builds and tests the actual PACKAGED artifact (what `cargo add` /
   # crates.io consumers get), not the working tree. `cargo package`
