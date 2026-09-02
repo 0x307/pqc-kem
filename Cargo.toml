@@ -4,7 +4,7 @@ version     = "0.2.0"
 edition     = "2021"
 rust-version = "1.85"
 authors     = ["Kenneth Harper"]
-description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — standalone WASM-compatible"
+description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — no_std library, WASM-target-compatible"
 license     = "MIT OR Apache-2.0"
 repository  = "https://github.com/0x307/pqc-kem"
 keywords    = ["post-quantum", "kem", "ml-kem", "wasm", "cryptography"]
@@ -12,7 +12,7 @@ categories  = ["cryptography", "wasm"]
 
 [lib]
 name       = "pqc_kem"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 # ── Core PQC — Pure Rust, no_std capable, WASM-compatible ────────────────────
 
@@ -54,20 +54,6 @@ zeroize = { version = "1", default-features = false, features = ["derive"] }
 
 # Constant-time comparison
 subtle = { version = "2", default-features = false }
-
-# no_std global allocator — required only when `std` is disabled, since this
-# crate's crate-type includes `cdylib`: building that artifact standalone
-# (e.g. `cargo build --no-default-features`) requires the crate itself to
-# supply a global allocator and panic handler, there being no downstream
-# binary crate to supply one. Same allocator libstd itself uses on wasm32.
-dlmalloc = { version = "0.2", default-features = false, features = ["global"] }
-
-# Optional: WASM bindings
-wasm-bindgen = { version = "0.2", optional = true }
-js-sys       = { version = "0.3", optional = true }
-
-# Optional: WASM entropy (required for getrandom in wasm32-unknown-unknown)
-getrandom = { version = "0.2", optional = true }
 
 # Optional: HQC (NIST 2025 standard) — real implementation via `liboqs`.
 #
@@ -116,15 +102,6 @@ std = [
     "ml-kem/getrandom",
 ]
 
-# wasm: enables wasm32-unknown-unknown target + JS entropy
-wasm = [
-    "dep:wasm-bindgen",
-    "dep:js-sys",
-    "dep:getrandom",
-    "getrandom/js",
-    "rand_core/getrandom",
-]
-
 # hqc: HQC-128/192/256 — real implementation via `liboqs` (the `oqs` crate).
 # Native targets only (C FFI); not wasm32-unknown-unknown compatible.
 hqc = ["dep:oqs"]
@@ -135,29 +112,35 @@ bike = []
 # mceliece: Classic McEliece — NOT YET IMPLEMENTED, will emit compile_error!
 mceliece = ["dep:pqcrypto-classicmceliece", "dep:pqcrypto-traits"]
 
-# docs.rs builds with default features (std) plus `wasm`, so the wasm-bindgen
-# API surface renders alongside the rest without a manual `--features` step.
-# `bike` and `mceliece` are deliberately excluded: they still fail to compile
-# by design (P2-01 compile_error! gates) since their underlying pqcrypto-*
-# dependencies don't implement what this crate calls against. `hqc` is now a
-# real, working feature (see the `oqs` dependency comment above) but is
-# ALSO excluded here: docs.rs's sandboxed build environment does not permit
-# arbitrary C-toolchain/cmake/libclang builds, so `hqc`'s native liboqs
-# build cannot run there regardless of correctness. `--all-features` is
-# still not usable (bike/mceliece compile_error!) and would break the
-# docs.rs build.
-[package.metadata.docs.rs]
-features = ["wasm"]
+# CRA-1: this crate is deliberately rlib-only now (see [lib] crate-type
+# above and src/lib.rs) -- a pure Rust/no_std library meant to be imported
+# into other builds, never built standalone on its own. There is no more
+# `wasm`-bindings surface or `standalone` feature here to document specially
+# for docs.rs: `hqc` can't build there regardless (native C toolchain/cmake/
+# libclang, unavailable in docs.rs's sandbox) and `bike`/`mceliece` still
+# fail to compile by design (P2-01). Default features are enough; no
+# [package.metadata.docs.rs] override needed. The WASM bindings that used to
+# live here moved to the sibling `pqc-kem-wasm` crate.
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# `ml-kem/getrandom` (enabled by our `std` feature) transitively pulls
+# getrandom 0.4 via crypto-common, and 0.4 refuses wasm32-unknown-unknown
+# unless its `wasm_js` crate feature is enabled (CRA-1, defect 2). Target-
+# conditional so ANY consumer building this crate for wasm32 -- not just
+# `pqc-kem-wasm` -- gets a working entropy backend with no feature flag to
+# remember. Inert (not even compiled) on every other target.
+getrandom = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 rand = "0.8"
 hex-literal = "0.4"
 
-# `panic = "abort"` is required by the no_std build path (see the panic
-# handler in src/lib.rs — core's unwind runtime isn't available without std).
-# This applies crate-wide, including to `cargo test` under default features:
-# a panicking test aborts the whole test binary rather than being caught and
-# reported individually. Acceptable here since nothing in this crate uses
+# `panic = "abort"` matters when THIS crate is the one being built directly
+# (root package) -- e.g. `cargo test --no-default-features`: the test
+# harness binary is a genuine final linked artifact, and core's unwind
+# runtime isn't available without std. Profile settings don't propagate to
+# downstream consumers, so this has no effect on anyone depending on
+# pqc-kem as a library. Acceptable here since nothing in this crate uses
 # `#[should_panic]` or `catch_unwind`.
 [profile.dev]
 panic = "abort"

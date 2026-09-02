@@ -44,6 +44,12 @@ try {
     }
 
     # -- no_std build (--no-default-features) must succeed --
+    # As of CRA-1, this crate is rlib-only and never defines
+    # #[global_allocator]/#[panic_handler] itself (see src/lib.rs) -- an
+    # ordinary no_std library consumer needs nothing beyond
+    # --no-default-features. (The standalone WASM cdylib artifact, which DOES
+    # need those lang items, now lives in the sibling pqc-kem-wasm/ crate --
+    # see its own verify/build steps, not this script.)
     Write-Host "[verify-gates] cargo build --no-default-features..." -ForegroundColor Cyan
     $noStdOutput = cargo build --no-default-features 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
