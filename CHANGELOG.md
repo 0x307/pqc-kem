@@ -7,10 +7,27 @@ adheres to the breaking-change and deprecation rules in
 [`STABILITY.md`](./STABILITY.md) rather than strict SemVer prior to `1.0.0` — see that
 document for what counts as breaking inside `0.x`.
 
-## [0.2.0] - 2026-09-01
+## [0.2.0] - 2026-09-02
+
+This release combines two independent pieces of work landed together: the real HQC
+implementation (below) and a fix for `pqc-kem`'s broken `wasm32-unknown-unknown` build
+(`CRA-1`, Linear). See "Migration from 0.1.x" at the end of this entry for what changes for
+existing consumers.
 
 ### Added
 
+- **New sibling crate: [`pqc-kem-wasm`](./pqc-kem-wasm)** (`CRA-1`). Carries the
+  `wasm-bindgen` JS/TS bindings and the `crate-type = ["cdylib"]` standalone `.wasm` artifact
+  that used to live in `pqc-kem` itself (`src/wasm.rs`, the `wasm` feature). Not published to
+  crates.io (`publish = false`) — it exists purely to produce the prebuilt npm package via
+  `wasm-pack` (`build.ps1` / `build-wasm.ps1`), same as before. See README.md's "Crate
+  layout" for why this needed to be a separate crate rather than a feature flag: Cargo builds
+  *every* declared `crate-type` for a package regardless of what a given consumer actually
+  needs, so a crate declaring both `cdylib` and `rlib` forces every ordinary library consumer
+  to also satisfy the `cdylib` link requirements — proven by a new downstream-consumer CI
+  regression test (`tests/downstream-consumer-fixture/`) that fails on an earlier draft of
+  this fix (lang items gated behind a `standalone` feature, `crate-type` left unconditional)
+  for exactly this reason.
 - Real HQC-128/192/256 (NIST 2025 standard) implementation behind the `hqc` feature flag,
   replacing the previous `compile_error!` stub. Native-target only (C FFI via `liboqs`, the
   `oqs` crate — not `wasm32-unknown-unknown` compatible; use ML-KEM for WASM targets).
@@ -23,6 +40,21 @@ document for what counts as breaking inside `0.x`.
 
 ### Changed
 
+- **BREAKING: `pqc-kem`'s `[lib] crate-type` is now `["rlib"]` only** (was `["cdylib",
+  "rlib"]`) (`CRA-1`). `pqc-kem` was previously unbuildable for `wasm32-unknown-unknown` in
+  *any* configuration: `cargo build --target wasm32-unknown-unknown --no-default-features
+  --features wasm` hit `error[E0152]: found duplicate lang item panic_impl` (this crate
+  unconditionally defined `#[global_allocator]`/`#[panic_handler]` whenever its own `std`
+  feature was off, which is invalid — a library crate can't tell from its own feature flags
+  whether the final linked program has `std` from elsewhere), and the `std`-enabled path hit
+  a separate `getrandom` 0.4 wasm32 backend gap. Fixed by making `pqc-kem` an ordinary
+  `rlib`-only library that never defines those lang items, and wiring `getrandom` 0.4's
+  `wasm_js` backend in as a target-conditional dependency for `wasm32-unknown-unknown` (no
+  feature flag needed). `pqc-kem` itself now builds cleanly for `wasm32-unknown-unknown` as a
+  plain dependency of any Rust project, including your own `wasm-bindgen` app.
+- **BREAKING: the `wasm` feature flag and `pqc_kem::wasm` module are removed from
+  `pqc-kem`.** That surface (the `wasm-bindgen` JS/TS bindings) moved to the new
+  `pqc-kem-wasm` crate — see "Added" above and "Migration from 0.1.x" below.
 - **Dependency: `pqcrypto-hqc` → `liboqs` (`oqs` crate).** The stub's original comment
   claimed `pqcrypto-hqc 0.1`'s published API didn't expose what this crate needed (82
   compile errors). Re-verified live rather than trusted: the current published
@@ -59,12 +91,33 @@ document for what counts as breaking inside `0.x`.
   accepted advisory. Re-ran `cargo deny check` after the swap: no new advisory, license,
   ban, or source finding from `oqs`/`oqs-sys`/`liboqs`.
 
-### Not changed (no breaking changes in this release)
+### Not changed
 
 - `bike` and `mceliece` features remain `compile_error!` stubs, unchanged.
 - The primary `HybridKemKeypair` (X25519+ML-KEM-768) construction and its
   `"pqc-kem-hybrid-v1"` HKDF info string are unchanged.
 - `KemAlgorithm::Hqc128/192/256` enum variants and public key sizes are unchanged.
+- No public API, algorithm, or cryptographic changes from the wasm/no_std fix (`CRA-1`) —
+  build configuration only. `HybridKemKeypair`, `MlKem{512,768,1024}Keypair`, and every wire
+  type are unchanged.
+
+### Migration from 0.1.x
+
+Per `STABILITY.md` §2/§4, this is a breaking release, not a patch:
+
+- **Library consumers of `pqc-kem` (the common case): no change needed.** `cargo add pqc-kem`
+  and `cargo add pqc-kem@0.2` (Cargo's `^0.1` doesn't match `0.2.0`, so this must be a
+  deliberate bump) is enough. If you were previously enabling `features = ["wasm"]` on
+  `pqc-kem` directly, that feature no longer exists — see below.
+- **If you consumed `pqc-kem`'s WASM/JS bindings (`WasmHybridKemKeypair`, `hybrid_encapsulate`,
+  etc., or built `pqc-kem` itself with `--features wasm`):** that surface moved to the new
+  `pqc-kem-wasm` crate. The compiled JS/TS API is unchanged (same function/class names, same
+  `pqc_kem.js`/`pqc_kem_bg.wasm` file names) — only the Rust-side crate producing it changed.
+  If you build the WASM artifact yourself rather than consuming the npm package, point your
+  build at `pqc-kem-wasm/` instead of `pqc-kem/` (see README.md's updated build commands).
+- **If you built `pqc-kem` itself as a standalone `no_std` cdylib** (e.g. directly invoking
+  `cargo build --no-default-features --features wasm` against 0.1.x): `pqc-kem` no longer
+  produces a `cdylib` at all. Use `pqc-kem-wasm` for that instead.
 
 ## [0.1.0] - 2026-08-27
 
