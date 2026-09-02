@@ -1,0 +1,48 @@
+# Regression fixture for CRA-1 (Linear) -- see ../../src/lib.rs and
+# ../../pqc-kem-wasm/Cargo.toml for the fuller writeup of what changed.
+#
+# This is a deliberately separate crate, not a `tests/*.rs` integration test,
+# because the defect it catches is only observable from a *consumer's* build
+# graph: it depends on pqc-kem as an ordinary no_std library
+# (`default-features = false`) while separately depending on its own
+# `getrandom` with the `js` feature -- a dependency that, when targeting
+# wasm32-unknown-unknown, links real `std` via wasm-bindgen's default
+# feature, regardless of this crate's own no_std-ness.
+#
+# Before the CRA-1 fix, pqc-kem unconditionally defined
+# `#[global_allocator]`/`#[panic_handler]` whenever ITS OWN `std` feature was
+# off -- a library crate cannot validly infer from its own feature flags
+# whether the final linked program has `std` elsewhere in the graph. Building
+# pqc-kem by itself never observes this: a second build of the crate itself
+# does not reproduce it. Only a real consumer graph like this one does.
+#
+# CRA-1's fix went a step further than gating those lang items behind a
+# feature flag: pqc-kem's `[lib] crate-type` is now `["rlib"]` only (moved
+# off `["cdylib", "rlib"]`), because Cargo builds ALL declared crate-types
+# for a dependency regardless of what the consumer actually needs -- an
+# earlier draft of this fix (lang items behind an opt-in `standalone`
+# feature, crate-type left unconditional) still broke this exact fixture,
+# since pqc-kem's own mandatory cdylib output needed the feature no ordinary
+# library consumer would think to pass. The standalone WASM cdylib artifact
+# now lives in the sibling `pqc-kem-wasm/` crate instead.
+#
+# This fixture must fail to build on the pre-CRA-1 crate and succeed after
+# (CI job `downstream-consumer` in ../../.github/workflows/ci.yml).
+#
+# `[workspace]` below makes this its own workspace root, independent of the
+# parent pqc-kem crate -- not part of any implicit workspace.
+
+[package]
+name = "pqc-kem-downstream-consumer-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pqc-kem = { path = "../..", default-features = false }
+getrandom = { version = "0.2", features = ["js"] }
+
+[workspace]

@@ -85,6 +85,57 @@ jobs:
       - name: cargo test (default features, MSRV toolchain)
         run: cargo test --locked --verbose
 
+  # Builds the actual advertised WASM artifact -- CRA-1 (Linear). This is
+  # the exact invocation build.ps1 / build-wasm.ps1 run (minus wasm-pack's
+  # JS/TS glue generation, which needs network access this job doesn't
+  # bother with -- `cargo build` alone is enough to prove the cdylib links).
+  # pqc-kem itself dropped `cdylib` from its crate-type as part of this fix
+  # (see src/lib.rs and pqc-kem-wasm/Cargo.toml for why); this crate is the
+  # one place in the repo that still needs one, and it's what this job
+  # exercises.
+  wasm-cdylib-build:
+    name: pqc-kem-wasm (wasm32 cdylib artifact)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache, wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: cargo build --target wasm32-unknown-unknown --no-default-features
+        working-directory: pqc-kem-wasm
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --locked --verbose
+
+  # Regression test for CRA-1's actual defect -- the important part per the
+  # ticket. Building pqc-kem by itself, even for wasm32, never reproduces
+  # this: it only shows up from a *consumer's* build graph, where something
+  # else in the graph links real std (here, a sibling `getrandom` dependency
+  # with its `js` feature) alongside pqc-kem consumed as an ordinary no_std
+  # library. Must fail on the pre-CRA-1 crate, must pass after. See
+  # tests/downstream-consumer-fixture/Cargo.toml for the full writeup of the
+  # two independent ways this used to fail (duplicate lang items from the
+  # unconditional #[panic_handler]/#[global_allocator], and separately --
+  # discovered while fixing the first -- pqc-kem's mandatory cdylib output
+  # needing lang items no ordinary library consumer would think to supply).
+  downstream-consumer:
+    name: Downstream consumer (no_std + external std leak, wasm32)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache, wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: cargo build --target wasm32-unknown-unknown
+        working-directory: tests/downstream-consumer-fixture
+        run: cargo build --target wasm32-unknown-unknown --locked --verbose
+
   # `hqc` is now REAL and working (P2/alpha-001 HQC implementation pass --
   # see src/hqc/mod.rs module docs and README.md "Why liboqs and not
   # pqcrypto-hqc?" for the full writeup). Unlike the default-features job,
