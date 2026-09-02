@@ -1,16 +1,21 @@
 # verify-gates.ps1 - Asserts the gated-feature contract for pqc-kem.
 #
-# Consolidates the ad-hoc build-bike.ps1 probe into one check covering all
-# gated (not-yet-implemented) features: bike, hqc, mceliece.
+# Consolidates the ad-hoc build-bike.ps1 probe into one check covering the
+# still-gated (not-yet-implemented) features: bike, mceliece. `hqc` moved
+# out of this list -- it is a real, working implementation now (via
+# `liboqs`/the `oqs` crate; see README.md "Why liboqs and not pqcrypto-hqc"
+# and CHANGELOG.md's 0.2.0 entry), not a compile_error! stub, so it gets its
+# own positive "must succeed" check below instead of the gated-feature loop.
 #
 # Contract asserted:
 #   1. `cargo build` (default features) succeeds.
 #   2. `cargo build --no-default-features` (no_std path) succeeds.
-#   3. `cargo build --features <gated>` FAILS for each gated feature, and the
-#      error output names that feature and says "not yet implemented" -
-#      confirming the compile_error! fires loudly rather than silently
-#      miscompiling or panicking at runtime.
-#   4. That failure is EXACTLY ONE error, not the intended compile_error!
+#   3. `cargo build --features hqc` succeeds (real implementation, not gated).
+#   4. `cargo build --features <gated>` FAILS for each still-gated feature
+#      (bike, mceliece), and the error output names that feature and says
+#      "not yet implemented" - confirming the compile_error! fires loudly
+#      rather than silently miscompiling or panicking at runtime.
+#   5. That failure is EXACTLY ONE error, not the intended compile_error!
 #      buried under a pile of raw errors from the still-broken pqcrypto_*
 #      calls elsewhere in the module. A compile_error! item doesn't exclude
 #      the rest of the module from being type-checked in the same pass, so
@@ -30,7 +35,7 @@ $ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
 
-$GatedFeatures = @("bike", "hqc", "mceliece")
+$GatedFeatures = @("bike", "mceliece")
 $Failures = @()
 
 try {
@@ -44,12 +49,27 @@ try {
     }
 
     # -- no_std build (--no-default-features) must succeed --
+    # As of CRA-1, this crate is rlib-only and never defines
+    # #[global_allocator]/#[panic_handler] itself (see src/lib.rs) -- an
+    # ordinary no_std library consumer needs nothing beyond
+    # --no-default-features. (The standalone WASM cdylib artifact, which DOES
+    # need those lang items, now lives in the sibling pqc-kem-wasm/ crate --
+    # see its own verify/build steps, not this script.)
     Write-Host "[verify-gates] cargo build --no-default-features..." -ForegroundColor Cyan
     $noStdOutput = cargo build --no-default-features 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         $Failures += "no_std build (--no-default-features) FAILED (expected success):`n$noStdOutput"
     } else {
         Write-Host "[verify-gates]   OK - no_std build succeeded." -ForegroundColor Green
+    }
+
+    # -- hqc must succeed (real implementation, not a compile_error! stub) --
+    Write-Host "[verify-gates] cargo build --features hqc..." -ForegroundColor Cyan
+    $hqcOutput = cargo build --features hqc 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $Failures += "hqc build (--features hqc) FAILED (expected success -- hqc is a real implementation, not gated):`n$hqcOutput"
+    } else {
+        Write-Host "[verify-gates]   OK - hqc build succeeded." -ForegroundColor Green
     }
 
     # -- Each gated feature must fail, naming itself --

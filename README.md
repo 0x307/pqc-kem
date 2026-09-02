@@ -18,7 +18,20 @@
 
 **Post-quantum Key Encapsulation Mechanisms for Rust and WebAssembly.**
 
-`pqc-kem` is a standalone, `no_std`-compatible Rust library implementing post-quantum KEM algorithms including ML-KEM (NIST FIPS 203), a Hybrid X25519+ML-KEM-768 construction, HQC, BIKE, and Classic McEliece. It is designed to run natively in `wasm32-unknown-unknown` environments — shipping as `.wasm` + `.js` + `.d.ts` + `.wit` artifacts — with zero external C dependencies for the primary ML-KEM and Hybrid KEM paths. Secret key material is zeroized on drop via the `zeroize` crate, entropy is never hardcoded (callers supply RNG; WASM uses `window.crypto.getRandomValues()`), and all wire types serialize to compact base64url JSON suitable for DID Documents and JWK payloads.
+`pqc-kem` is a pure Rust, `no_std`-compatible **library** implementing post-quantum KEM algorithms including ML-KEM (NIST FIPS 203), a Hybrid X25519+ML-KEM-768 construction, HQC, BIKE, and Classic McEliece — meant to be imported into other builds (`cargo add pqc-kem`), including your own `wasm32-unknown-unknown` project, with zero external C dependencies for the primary ML-KEM and Hybrid KEM paths. It is not itself a standalone artifact (see [Crate layout](#crate-layout) below for the sibling crate that is). Secret key material is zeroized on drop via the `zeroize` crate, and entropy is never hardcoded — callers always supply their own RNG.
+
+The prebuilt `.wasm` + `.js` + `.d.ts` + `.wit` artifacts for JavaScript/TypeScript consumers (no Rust toolchain required) are produced by the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate — see [Crate layout](#crate-layout) and the [JS/TS quickstarts](#quick-start--javascript--typescript-browser) below. All wire types serialize to compact base64url JSON suitable for DID Documents and JWK payloads.
+
+## Crate layout
+
+This repository is one Git repo, one published crate (`pqc-kem`), and two Cargo *packages*:
+
+| Package | Publishes to crates.io? | `crate-type` | Purpose |
+|---|---|---|---|
+| [`pqc-kem`](./Cargo.toml) (this directory) | **Yes** | `rlib` only | The library. `cargo add pqc-kem` and use it directly in any Rust project — including your own `wasm32-unknown-unknown` build. |
+| [`pqc-kem-wasm`](./pqc-kem-wasm) | No (`publish = false`) | `cdylib` only | Depends on `pqc-kem`; produces the standalone `.wasm` artifact + JS/TS bindings that ship to npm. Exists so JS/TS developers with no Rust toolchain still get a prebuilt package. |
+
+Why two packages instead of one: Cargo's `[lib] crate-type` is unconditional — a single crate can't be "`rlib` for library consumers, `cdylib` for the standalone build" depending on who's asking. Cargo also always builds *every* declared crate-type for a package, even ones an ordinary dependent never asked for — so a crate declaring both `cdylib` and `rlib` forces every consumer to satisfy the `cdylib` link requirements too (this broke `pqc-kem` as a plain dependency in an earlier draft of this fix — see `CRA-1`, Linear, for the full writeup). Splitting the standalone-artifact mechanism into its own crate is what lets `pqc-kem` stay an ordinary, well-behaved Rust library.
 
 ## What runs today vs. what is designed
 
@@ -26,7 +39,8 @@
 
 - ML-KEM-512, ML-KEM-768, ML-KEM-1024 (NIST FIPS 203) — pure Rust, `no_std`-compatible, default features
 - Hybrid X25519+ML-KEM-768 construction (the recommended primary API)
-- WASM bindings (`WasmHybridKemKeypair`, `WasmMlKem{512,768,1024}Keypair`, and the free functions) behind the opt-in `wasm` feature, targeting `wasm32-unknown-unknown`
+- `pqc-kem` itself builds cleanly for `wasm32-unknown-unknown` as an ordinary dependency of your own Rust/wasm-bindgen project — no special feature needed
+- WASM/JS bindings (`WasmHybridKemKeypair`, `WasmMlKem{512,768,1024}Keypair`, and the free functions) and the prebuilt `.wasm` artifact, via the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate (see [Crate layout](#crate-layout))
 - Wire types (`KemPublicKey`, `KemCiphertext`, `SharedSecret`, `HybridPublicKey`, `HybridKemCiphertext`) with base64url JSON and multibase (base58btc) encoding, zeroized secret material on drop
 
 **Also runs today (opt-in, native-only):**
@@ -188,11 +202,11 @@ const mlkemResult: string               = ml_kem_768_encapsulate(mlkemPubBytes);
 
 ## Quick Start — JavaScript / TypeScript (Node.js / Deno)
 
-Build the WASM package targeting Node.js:
+Build the WASM package targeting Node.js (from the [`pqc-kem-wasm`](./pqc-kem-wasm) crate — see [Crate layout](#crate-layout)):
 
 ```powershell
-cd pqc-kem
-wasm-pack build --target nodejs --features wasm --release
+cd pqc-kem-wasm
+wasm-pack build --target nodejs --release -- --no-default-features
 ```
 
 Then use it in Node.js:
@@ -241,13 +255,15 @@ With specific features:
 
 ```toml
 [dependencies]
-# WASM target (wasm32-unknown-unknown)
-pqc-kem = { path = "./pqc-kem", default-features = false, features = ["wasm"] }
+# WASM target (wasm32-unknown-unknown) -- builds as-is, no special feature
+# needed; see "Crate layout" above. Write your own #[wasm_bindgen] surface
+# on top, or see the pqc-kem-wasm crate in this repo as a reference.
+pqc-kem = { path = "./pqc-kem", default-features = false }
 
 # With HQC (requires a C toolchain, cmake, and libclang for bindgen)
 pqc-kem = { path = "./pqc-kem", features = ["hqc"] }
 
-# no_std with alloc (embedded / WASM without wasm-bindgen)
+# no_std with alloc (embedded)
 pqc-kem = { path = "./pqc-kem", default-features = false }
 ```
 
@@ -279,10 +295,11 @@ await init();
 | Feature      | Default | Description                                                                                   |
 |--------------|---------|-----------------------------------------------------------------------------------------------|
 | `std`        | ✅ Yes  | Enables `std`-dependent trait impls (`sha2/std`, `serde/std`, `zeroize/std`, `ml-kem/getrandom`). Disable for `no_std` targets. |
-| `wasm`       | ❌ No   | Enables `wasm-bindgen` exports, `js-sys`, and `getrandom/js` for `window.crypto.getRandomValues()` entropy. Required for browser/WASM targets. |
 | `hqc`        | ❌ No   | Enables HQC-128/192/256 via `liboqs` (the `oqs` crate, C FFI). Not WASM-compatible. Requires a C toolchain, `cmake`, and `libclang` (for `bindgen`) — no OpenSSL required with this feature alone. |
 | `bike`       | ❌ No   | Enables BIKE via `pqcrypto-bike` (C FFI). Not WASM-compatible. Requires a C toolchain.        |
 | `mceliece`   | ❌ No   | Enables Classic McEliece via `pqcrypto-classicmceliece` (C FFI). Very large keys (hundreds of KB). Not WASM-compatible. |
+
+There is no `wasm` feature on `pqc-kem` itself — it builds for `wasm32-unknown-unknown` as an ordinary dependency, no feature flag needed (the required `getrandom` backend for that target is wired in automatically; see Cargo.toml). The `wasm-bindgen` JS/TS surface lives in the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate — see [Crate layout](#crate-layout).
 
 ---
 
@@ -381,7 +398,7 @@ assert_eq!(sender_ss.bytes, recipient_ss.bytes);
 
 ### WASM Exports
 
-All exports are in [`pqc_kem::wasm`](src/wasm.rs) and require the `wasm` feature. Byte arrays cross the WASM boundary as `Uint8Array`. Errors are returned as JavaScript `Error` objects.
+All exports are in the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate (see [Crate layout](#crate-layout)), not `pqc-kem` itself. Byte arrays cross the WASM boundary as `Uint8Array`. Errors are returned as JavaScript `Error` objects.
 
 #### Classes
 
@@ -474,7 +491,7 @@ const hybridRecovered      = hybridKeypair.decapsulate(hybridCt);
 
 ### `HybridKemCiphertext`
 
-Produced by [`HybridKemKeypair::encapsulate`](src/fips203/hybrid.rs) and [`hybrid_encapsulate`](src/wasm.rs). Transmitted from sender to recipient.
+Produced by [`HybridKemKeypair::encapsulate`](src/fips203/hybrid.rs) and [`hybrid_encapsulate`](pqc-kem-wasm/src/lib.rs). Transmitted from sender to recipient.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -583,20 +600,20 @@ sharedSecret.fill(0); // manually zeroize JS-side shared secret
 
 ### Caller-Supplied Entropy
 
-This crate **never hardcodes `OsRng`** in its core API. All `generate` and `encapsulate` methods accept a `&mut R` where `R: CryptoRng + RngCore`. This allows:
+This crate (`pqc-kem`) **never hardcodes `OsRng`** in its API. All `generate` and `encapsulate` methods accept a `&mut R` where `R: CryptoRng + RngCore` — the caller always supplies the RNG.
 
 - Testing with deterministic RNGs
 - Integration with hardware security modules
 - Custom entropy sources in embedded environments
 
-The WASM bindings (`wasm.rs`) use `rand_core::OsRng` internally, which routes through `getrandom/js` to `window.crypto.getRandomValues()` in browser environments.
+The sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate's JS/TS bindings supply that RNG internally (a small `RngCore`/`CryptoRng` wrapper around `getrandom`'s `wasm_js` backend), so JS callers don't have to.
 
 ### WASM Entropy
 
-In `wasm32-unknown-unknown` targets with the `wasm` feature enabled, entropy is sourced from the browser's Web Crypto API:
+For `wasm32-unknown-unknown` targets, `pqc-kem` wires in `getrandom` 0.4's `wasm_js` backend automatically (a target-conditional dependency — see Cargo.toml), so `ml-kem`'s own internal entropy needs work out of the box for any consumer building this crate for that target. The [`pqc-kem-wasm`](./pqc-kem-wasm) bindings source their own caller-facing entropy the same way:
 
 ```
-window.crypto.getRandomValues() → getrandom/js → rand_core::OsRng → KEM operations
+window.crypto.getRandomValues() → getrandom (wasm_js backend) → RNG passed into KEM operations
 ```
 
 This is the same entropy source used by TLS implementations in modern browsers.
@@ -607,7 +624,7 @@ The `ntru` module exists as a **deprecation marker only**. NTRU was eliminated f
 
 ### Unsafe Code Policy
 
-This crate's own code contains **zero `unsafe`**, enforced at compile time by `#![forbid(unsafe_code)]` in [`src/lib.rs`](src/lib.rs) — this is true of the published default build (`std`), `no_std`, and `wasm` feature combinations alike.
+This crate's own code contains **zero `unsafe`**, enforced at compile time by `#![forbid(unsafe_code)]` in [`src/lib.rs`](src/lib.rs) — this is true of both the `std` and `no_std` builds. The sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate carries the same `#![forbid(unsafe_code)]` in its own `src/lib.rs`.
 
 This forbids `unsafe` in this crate's source only; it does not (and cannot) reach into dependencies, some of which use `unsafe` internally (e.g. for SIMD or constant-time primitives). The `hqc` feature links a C FFI dependency (`liboqs`, via the `oqs` crate) — real and working, unlike `bike`/`mceliece` below. The gated `bike` and `mceliece` features would additionally link C FFI dependencies (`pqcrypto-classicmceliece` for the latter) if enabled — but those two features don't compile today by design (see P2-01), so no build of this crate links their C code.
 
@@ -649,16 +666,19 @@ additionally run `hqc_tests` (16 more tests).
 powershell -ExecutionPolicy Bypass -File pqc-kem/build.ps1
 ```
 
-This runs `wasm-pack build --target web --features wasm --release` and copies the output into `pqc-kem/dist/`.
+This builds the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate — `wasm-pack build --target web --release -- --no-default-features` run from `pqc-kem-wasm/` — and copies the output into `pqc-kem/dist/`. See [Crate layout](#crate-layout).
 
 ### Build for a Specific Target
 
 ```powershell
-# Native release build
+# Native release build (the library)
 cd pqc-kem; cargo build --release
 
-# WASM release build (no std, wasm feature)
-cd pqc-kem; cargo build --target wasm32-unknown-unknown --no-default-features --features wasm --release
+# WASM release build of the library itself (no feature needed -- see Crate layout)
+cd pqc-kem; cargo build --target wasm32-unknown-unknown --release
+
+# WASM cdylib artifact (the standalone .wasm build, from pqc-kem-wasm)
+cd pqc-kem-wasm; cargo build --target wasm32-unknown-unknown --no-default-features --release
 
 # HQC (requires a C toolchain, cmake, and libclang for bindgen) — real, working
 cd pqc-kem; cargo build --release --features hqc
@@ -672,8 +692,8 @@ cd pqc-kem; cargo build --release --features hqc
 ### Rebuild `dist/` Manually
 
 ```powershell
-cd pqc-kem
-wasm-pack build --target web --no-default-features --features wasm --release --out-dir dist
+cd pqc-kem-wasm
+wasm-pack build --target web --release --out-dir ../dist -- --no-default-features
 ```
 
 ---
@@ -682,13 +702,15 @@ wasm-pack build --target web --no-default-features --features wasm --release --o
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request, on a fresh GitHub-hosted `ubuntu-latest` runner with no dependency or build caching — every run gets a genuinely clean checkout and toolchain install, not a machine with leftover local state. It needs nothing beyond what's listed above (no credentials, no pre-installed tools, no local files): just Rust via `rustup`, installed fresh by [`dtolnay/rust-toolchain`](https://github.com/dtolnay/rust-toolchain).
 
-Five jobs:
+Seven jobs:
 
 - **Default features (build + test)** — `cargo build` / `cargo test` with default features. This is the crate's supported surface and must always pass. This job also records the clone-to-green time (fresh checkout → passing tests) in the workflow run summary.
 - **MSRV (Rust 1.85.0, build + test)** — `cargo build` / `cargo test` with default features, pinned to exactly the `rust-version` declared in `Cargo.toml` (not `stable`). Fails if any future change relies on a Rust feature newer than the declared MSRV.
+- **`pqc-kem-wasm` (wasm32 cdylib artifact)** — builds the actual advertised standalone WASM artifact (the sibling `pqc-kem-wasm` crate; see [Crate layout](#crate-layout)) for `wasm32-unknown-unknown`. This is the exact invocation `build.ps1`/`build-wasm.ps1` run, minus wasm-pack's JS/TS glue generation.
+- **Downstream consumer (no_std + external std leak, wasm32)** — builds `tests/downstream-consumer-fixture/`, a minimal separate crate that depends on `pqc-kem` as an ordinary no_std library while independently linking `std` via an unrelated dependency, targeting `wasm32-unknown-unknown`. This is the actual regression test for `CRA-1` — the defect it catches (a library crate wrongly claiming process-wide lang items) is only observable from a consumer's build graph, never from building `pqc-kem` on its own.
 - **`hqc` feature (build + test)** — `cargo build`/`cargo test --features hqc`, on a runner with a C toolchain, `cmake`, and `libclang` available (verified not to additionally need OpenSSL for `hqc` alone). This is real, working functionality now, not a stub — must always pass.
 - **`--all-features` (must fail with exactly bike/mceliece)** — `cargo build --all-features` is still *expected* to fail here, but only because of `bike` and `mceliece`: they remain gated behind `compile_error!` stubs (see P2-01) since their underlying `pqcrypto-*` dependencies don't implement what this crate calls against. `hqc` is no longer part of this expected failure — it is real and compiles. This job asserts the (now two-item) contract in both directions — it fails if `--all-features` starts passing (a gate was silently removed/fixed) and it fails if the failure stops being exactly those two named messages (something else broke and got buried underneath them, or `hqc` unexpectedly started failing again).
-- **Packaged artifact (`cargo package` build + test)** — builds and tests the actual packaged `.crate` output (what a `cargo add` consumer gets), not the live working tree, catching cases where `.gitignore`/package-exclude rules would ship something broken or incomplete.
+- **Packaged artifact (`cargo package` build + test)** — builds and tests the actual packaged `.crate` output (what a `cargo add` consumer gets), not the live working tree, catching cases where `.gitignore`/package-exclude rules would ship something broken or incomplete. (`pqc-kem-wasm/` and `tests/downstream-consumer-fixture/` are separate Cargo packages with their own `Cargo.toml`, so `cargo package` never pulls them into `pqc-kem`'s own published `.crate` — verified via `cargo package --list`.)
 
 ---
 

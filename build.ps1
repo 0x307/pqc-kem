@@ -23,10 +23,16 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Write-Host "[build] Building pqc-kem WASM artifacts..." -ForegroundColor Cyan
 
 # ── Step 1: wasm-pack build ───────────────────────────────────────────────────
-Write-Host "[build] Running wasm-pack..." -ForegroundColor Cyan
-Push-Location $ScriptDir
+# CRA-1: the standalone cdylib artifact is built from the sibling
+# pqc-kem-wasm/ crate now, not this crate directly -- pqc-kem itself is
+# rlib-only (an ordinary library, importable into other builds) and can no
+# longer be built as a cdylib on its own. --out-dir is relative to
+# pqc-kem-wasm/, so it points back up to this repo's dist/ to keep the
+# existing output location.
+Write-Host "[build] Running wasm-pack (pqc-kem-wasm/)..." -ForegroundColor Cyan
+Push-Location (Join-Path $ScriptDir "pqc-kem-wasm")
 try {
-    wasm-pack build --target web --out-dir dist --release -- --no-default-features --features wasm
+    wasm-pack build --target web --out-dir ..\dist --release -- --no-default-features
     if ($LASTEXITCODE -ne 0) {
         Write-Error "[build] wasm-pack failed with exit code $LASTEXITCODE"
         exit $LASTEXITCODE
@@ -46,7 +52,7 @@ Write-Host "[build] Writing dist/package.json..." -ForegroundColor Cyan
 $PackageJson = @'
 {
   "name": "pqc-kem",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — standalone WASM",
   "type": "module",
   "main": "./pqc_kem.js",
