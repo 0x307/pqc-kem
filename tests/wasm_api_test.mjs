@@ -4,8 +4,12 @@
  * Node.js ESM regression tests for the pqc-kem WASM API.
  * Run with: node tests/wasm_api_test.mjs
  *
- * Requires a successful wasm-pack build in dist/:
- *   wasm-pack build --target web --out-dir dist --release -- --no-default-features --features wasm
+ * Requires a successful wasm-pack build in dist/ (there is no `wasm` feature
+ * on `pqc-kem` -- it was removed; see CHANGELOG.md 0.3.0 and README.md
+ * "Feature Flags"). Produce dist/ with either:
+ *   powershell -ExecutionPolicy Bypass -File build.ps1
+ * or the equivalent raw wasm-pack invocation it runs, from pqc-kem-wasm/:
+ *   wasm-pack build --target web --out-dir ../dist --release -- --no-default-features
  */
 
 import { readFileSync } from 'fs';
@@ -17,6 +21,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const distDir    = join(__dirname, '..', 'dist');
 const wasmPath   = join(distDir, 'pqc_kem_bg.wasm');
+
+// ── Expected version, read from pqc-kem-wasm/Cargo.toml at run time ─────────
+// Avoids a second hardcoded literal drifting out of sync with the crate
+// version the way the old literal "0.1.0" did (A-D1). Falls back to a
+// hardcoded string only if the manifest can't be read/parsed.
+function readExpectedVersion() {
+  const manifestPath = join(__dirname, '..', 'pqc-kem-wasm', 'Cargo.toml');
+  try {
+    const manifest = readFileSync(manifestPath, 'utf8');
+    const match = manifest.match(/^version\s*=\s*"([^"]+)"/m);
+    if (match) return match[1];
+  } catch {
+    // fall through to the hardcoded fallback below
+  }
+  // Fallback (keep in sync with pqc-kem-wasm/Cargo.toml if this ever triggers):
+  return '0.3.0';
+}
+const expectedVersion = readExpectedVersion();
 
 // ── Load the wasm-bindgen JS glue (web target) ────────────────────────────────
 // On Windows, dynamic import() requires a file:// URL — not a raw Win32 path.
@@ -231,9 +253,9 @@ runTest('sender and recipient shared secrets are byte-for-byte identical', () =>
 // TEST 6 — Version and algorithm strings
 // =============================================================================
 console.log('\nTest 6 — Version and algorithm strings:');
-runTest('pqc_kem_version() returns "0.1.0"', () => {
+runTest(`pqc_kem_version() returns "${expectedVersion}" (read from pqc-kem-wasm/Cargo.toml)`, () => {
   const v = pqc_kem_version();
-  assertEqual(v, '0.1.0', 'pqc_kem_version()');
+  assertEqual(v, expectedVersion, 'pqc_kem_version()');
 });
 
 runTest('primary_algorithm() returns "X25519+ML-KEM-768"', () => {

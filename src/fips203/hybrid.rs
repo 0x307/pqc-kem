@@ -27,7 +27,7 @@ use sha2::Sha256;
 use x25519_dalek::{EphemeralSecret, PublicKey as X25519PublicKey, StaticSecret};
 
 use crate::error::{KemError, KemResult};
-use crate::types::{HybridKemCiphertext, HybridPublicKey, SharedSecret};
+use crate::types::{HybridKemCiphertext, HybridPublicKey, KemAlgorithm, KemSecretKey, SharedSecret};
 
 /// HKDF info string for the hybrid KEM construction.
 const HYBRID_KEM_INFO: &[u8] = b"pqc-kem-hybrid-v1";
@@ -37,6 +37,21 @@ const HYBRID_KEM_INFO: &[u8] = b"pqc-kem-hybrid-v1";
 /// This is this crate's recommended KEM construction for all operations.
 /// The hybrid construction ensures that even if one component is broken,
 /// the overall security is maintained.
+///
+/// # Secret handling
+/// - `x25519_secret` is an `x25519_dalek::StaticSecret`. With this crate's
+///   `x25519-dalek/zeroize` feature enabled (0.3.0+), it carries a `Drop`
+///   impl that zeroizes its 32 secret bytes.
+/// - `mlkem_dk` is an `ml_kem::DecapsulationKey`. With this crate's
+///   `ml-kem/zeroize` feature enabled (0.3.0+), its `Drop` impl zeroizes
+///   the 64-byte seed (`d ‖ z`) and the expanded decryption key.
+/// - `x25519_public` and `mlkem_ek` hold only public key material and are
+///   never zeroized.
+///
+/// Because both secret-bearing fields zeroize themselves on drop, this
+/// struct needs no explicit `Drop` impl of its own — dropping it drops
+/// each field in turn, and this type implements [`zeroize::ZeroizeOnDrop`]
+/// (see the compile-time check in `tests/zeroize_tests.rs`).
 pub struct HybridKemKeypair {
     /// X25519 static secret key (for decapsulation).
     x25519_secret: StaticSecret,
@@ -47,6 +62,8 @@ pub struct HybridKemKeypair {
     /// ML-KEM-768 decapsulation (secret) key.
     mlkem_dk: DecapsulationKey<MlKem768>,
 }
+
+impl zeroize::ZeroizeOnDrop for HybridKemKeypair {}
 
 impl HybridKemKeypair {
     /// Generate a new hybrid keypair using the provided RNG.
@@ -225,19 +242,83 @@ impl HybridKemKeypair {
         })
     }
 
+    /// Returns the X25519 static secret as a zeroizing [`KemSecretKey`]
+    /// (32 bytes, algorithm tag [`KemAlgorithm::HybridX25519MlKem768`]).
+    ///
+    /// This is the classical half of the hybrid secret key; see
+    /// [`Self::mlkem_seed`] for the post-quantum half. Replaces the
+    /// deprecated [`Self::x25519_secret_bytes`], which returned a plain
+    /// `[u8; 32]` that was never zeroized on drop.
+    pub fn x25519_secret(&self) -> KemSecretKey {
+        KemSecretKey::new(
+            KemAlgorithm::HybridX25519MlKem768,
+            self.x25519_secret.to_bytes().to_vec(),
+        )
+    }
+
+    /// Returns the ML-KEM-768 seed (`d ‖ z`, 64 bytes) as a zeroizing
+    /// [`KemSecretKey`] (algorithm tag [`KemAlgorithm::MlKem768`]).
+    ///
+    /// Replaces the deprecated [`Self::mlkem_secret_bytes`] (A-Z1
+    /// hardening): instead of silently returning an empty `Vec` if the
+    /// underlying `ml_kem::DecapsulationKey` has no recoverable seed, this
+    /// returns `Err(KemError::Internal(..))`. This cannot happen for
+    /// keypairs constructed via [`Self::generate`] or
+    /// [`Self::from_secret_key_bytes`] (this type's only public
+    /// constructors), both of which build the key via
+    /// `DecapsulationKey::from_seed`.
+    pub fn mlkem_seed(&self) -> KemResult<KemSecretKey> {
+        let seed = self.mlkem_dk.to_seed().ok_or_else(|| {
+            KemError::Internal("ML-KEM-768 decapsulation key has no recoverable seed".into())
+        })?;
+        Ok(KemSecretKey::new(KemAlgorithm::MlKem768, seed.as_slice().to_vec()))
+    }
+
     /// Returns the X25519 secret key bytes (32 bytes).
     ///
-    /// **Warning:** Handle with care — these are raw secret key bytes.
+    /// **Warning:** Handle with care — these are raw secret key bytes
+    /// returned as a plain `[u8; 32]`, which is *not* zeroized on drop.
+    #[deprecated(
+        since = "0.3.0",
+        note = "use x25519_secret(), which returns a zeroizing KemSecretKey; removal no earlier than 0.4.0"
+    )]
     pub fn x25519_secret_bytes(&self) -> [u8; 32] {
         self.x25519_secret.to_bytes()
     }
 
     /// Returns the ML-KEM-768 seed bytes (64 bytes).
     ///
-    /// **Warning:** Handle with care — these are raw secret key bytes.
+    /// **Warning:** Handle with care — these are raw secret key bytes
+    /// returned as a plain `Vec<u8>`, which is *not* zeroized on drop.
+    /// Also note this silently returns an empty `Vec` (rather than an
+    /// error) if the seed is unavailable — kept exactly as in 0.2.x for
+    /// backward compatibility; see [`Self::mlkem_seed`] for the fallible
+    /// replacement.
+    #[deprecated(
+        since = "0.3.0",
+        note = "use mlkem_seed(), which returns Result<KemSecretKey, KemError> and is zeroized on drop; removal no earlier than 0.4.0"
+    )]
     pub fn mlkem_secret_bytes(&self) -> Vec<u8> {
         self.mlkem_dk.to_seed()
             .map(|s| s.as_slice().to_vec())
             .unwrap_or_default()
     }
+}
+
+/// **KAT-only helper — not a general-purpose X25519 API.**
+///
+/// Raw X25519 scalar multiplication (RFC 7748 §5: `X25519(k, u)`), exposed
+/// only so `tests/kat_x25519.rs` can check this crate's `x25519-dalek`
+/// dependency against the RFC 7748 §5.2/§6.1 test vectors (see
+/// `tests/vectors/x25519/rfc7748.json` and `tests/vectors/README.md`).
+///
+/// This crate's public surface intentionally has **no general-purpose
+/// X25519 API** — X25519 is only ever used internally as half of
+/// [`HybridKemKeypair`]'s combiner, via [`HybridKemKeypair::encapsulate`]
+/// and [`HybridKemKeypair::decapsulate`]. Do not build new functionality on
+/// top of this function; it exists purely for KAT coverage. Gated behind
+/// the `kat` Cargo feature (non-default).
+#[cfg(feature = "kat")]
+pub fn x25519_kat(scalar: [u8; 32], u: [u8; 32]) -> [u8; 32] {
+    x25519_dalek::x25519(scalar, u)
 }

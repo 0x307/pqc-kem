@@ -13,15 +13,10 @@
 //!
 //! - **HQC** (NIST 2025) — Code-based alternative, gated behind `hqc` feature.
 //!   Real implementation via `liboqs` (native targets only, not WASM).
-//!   - [`hqc::Hqc128Keypair`], [`hqc::Hqc192Keypair`], [`hqc::Hqc256Keypair`]
-//!
-//! - **BIKE** (NIST Round 4 alternate) — gated behind `bike` feature.
-//!   NOT YET IMPLEMENTED: enabling `bike` fails the build by design.
-//!   - [`bike::BikeKeypair`]
-//!
-//! - **Classic McEliece** (NIST Round 4 alternate) — gated behind `mceliece` feature.
-//!   NOT YET IMPLEMENTED: enabling `mceliece` fails the build by design.
-//!   - [`mceliece::McElieceKeypair`]
+//!   - `hqc::Hqc128Keypair`, `hqc::Hqc192Keypair`, `hqc::Hqc256Keypair` (only
+//!     compiled with `--features hqc`; plain code spans here, not links, so
+//!     `cargo doc --no-deps` stays warning-free with default features, where
+//!     these types do not exist)
 //!
 //! ## Quick Start
 //!
@@ -92,15 +87,6 @@ pub mod fips203;
 /// HQC (NIST 2025 standard) — gated behind `hqc` feature. Real implementation
 /// via `liboqs`, native targets only (not WASM).
 pub mod hqc;
-
-/// BIKE (NIST Round 4 alternate) — gated behind `bike` feature, NOT YET IMPLEMENTED.
-pub mod bike;
-
-/// Classic McEliece (NIST Round 4 alternate) — gated behind `mceliece` feature, NOT YET IMPLEMENTED.
-pub mod mceliece;
-
-/// NTRU — eliminated from NIST standardization. Deprecation marker only.
-pub mod ntru;
 
 // ── Top-Level Re-exports ──────────────────────────────────────────────────────
 

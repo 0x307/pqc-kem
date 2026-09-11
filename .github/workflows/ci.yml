@@ -162,19 +162,30 @@ jobs:
       - name: cargo test --features hqc
         run: cargo test --features hqc --locked --verbose
 
-  # --all-features is EXPECTED to fail on this crate, but only because of
-  # bike and mceliece: they are gated behind deliberate compile_error!
-  # stubs (P2-01) because their underlying pqcrypto-* dependencies don't
-  # implement what this crate calls against. `hqc` is no longer part of
-  # this expected failure -- it is real and compiles (see the dedicated
-  # hqc-feature-build-test job above). This job asserts the (now two-item)
-  # contract in both directions -- it fails if --all-features starts
-  # passing (the remaining gates were silently removed/fixed without
-  # telling this workflow), and it fails if the failure output stops being
-  # exactly those two named messages (some other, unrelated break got
-  # buried underneath them, or hqc unexpectedly started failing again).
-  all-features-must-fail-cleanly:
-    name: --all-features (must fail with exactly bike/mceliece)
+      # WP3 (X-3/A-D1): this is the one runner in the matrix with a C
+      # toolchain/cmake/libclang available, so it's the only place
+      # `cargo doc --features hqc` can actually run -- doc'ing the hqc
+      # module's real (feature-gated) types needs the feature enabled.
+      # Kept as its own -D warnings check separate from clippy-and-doc
+      # below, which only covers default features.
+      - name: cargo doc --features hqc (-D warnings)
+        run: cargo doc --no-deps --features hqc --locked
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+  # 0.3.0 (WP1, feature-surface hygiene): `bike` and `mceliece` were each a
+  # permanent `compile_error!` stub -- neither was ever implemented -- and
+  # have now been REMOVED entirely (feature flags, `src/bike`/`src/mceliece`
+  # modules, and the `pqcrypto-classicmceliece`/`pqcrypto-traits`
+  # dependencies that dragged in three RUSTSEC `unmaintained` advisories).
+  # `--all-features` therefore now enables only `hqc` (a real, working
+  # implementation -- see hqc-feature-build-test above) and is expected to
+  # build and test cleanly, like any other supported feature combination.
+  # This job replaces the old `all-features-must-fail-cleanly` job, which
+  # asserted the opposite (must fail with exactly two named compile_error!s)
+  # -- see CHANGELOG.md's 0.3.0 entry for the full writeup.
+  all-features-build-test:
+    name: --all-features (build + test)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (fresh clone, no cache)
@@ -183,42 +194,11 @@ jobs:
       - name: Install Rust toolchain (fresh, no cache)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: cargo build --all-features (expect exactly 2 named compile_error!s)
-        run: |
-          set +e
-          OUTPUT=$(cargo build --all-features --locked 2>&1)
-          EXIT_CODE=$?
-          set -e
-          echo "$OUTPUT"
+      - name: cargo build --all-features
+        run: cargo build --all-features --locked --verbose
 
-          if [ "$EXIT_CODE" -eq 0 ]; then
-            echo "::error::--all-features succeeded, but it is supposed to fail. The bike/mceliece compile_error! gates (P2-01) appear to have been removed or the underlying pqcrypto-* deps were fixed -- update this workflow (and the crate's docs) if that's intentional."
-            exit 1
-          fi
-
-          FAILED=0
-          for feature in bike mceliece; do
-            if ! echo "$OUTPUT" | grep -qE "The \`${feature}\` feature is not yet implemented"; then
-              echo "::error::--all-features failed, but did not contain the expected compile_error! message naming the '${feature}' feature. This is a regression: --all-features must fail for exactly the two known/intended reasons, not an unrelated break."
-              FAILED=1
-            fi
-          done
-
-          if echo "$OUTPUT" | grep -qE "The \`hqc\` feature is not yet implemented"; then
-            echo "::error::--all-features failed with the OLD hqc compile_error! stub message. hqc is supposed to be real and working now -- this means either a bad revert or a real regression in the hqc feature."
-            FAILED=1
-          fi
-
-          if ! echo "$OUTPUT" | grep -qE "due to 2 previous error"; then
-            echo "::error::--all-features did not fail with exactly 2 errors (one per gated feature: bike, mceliece). Either fewer/more than 2 fired, or additional unrelated errors are present (e.g. hqc unexpectedly failing, or a real bug)."
-            FAILED=1
-          fi
-
-          if [ "$FAILED" -ne 0 ]; then
-            exit 1
-          fi
-
-          echo "--all-features failed as expected: exactly the two intended compile_error! messages (bike, mceliece), nothing else. hqc compiled fine as part of this build."
+      - name: cargo test --all-features
+        run: cargo test --all-features --locked --verbose
 
   # Builds and tests the actual PACKAGED artifact (what `cargo add` /
   # crates.io consumers get), not the working tree. `cargo package`
@@ -255,3 +235,151 @@ jobs:
       - name: cargo test against the packaged artifact
         working-directory: ${{ steps.pkg.outputs.dir }}
         run: cargo test --locked --verbose
+
+  # WP3 (X-3): the `no_std` + `alloc`-only claim ("What runs today" /
+  # "Feature Flags" in README.md) was previously enforced only by
+  # verify-gates.ps1, run manually/locally -- never by CI itself. This job
+  # makes that claim CI-enforced. Uses the same fresh-runner, no-cache
+  # pattern as every other job here.
+  no-std-build:
+    name: no_std build + test (--no-default-features)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build --no-default-features
+        run: cargo build --no-default-features --locked --verbose
+
+      - name: cargo test --no-default-features
+        run: cargo test --no-default-features --locked --verbose
+
+  # WP3 (X-3/A-D1): lint and doc-link hygiene, previously only run
+  # ad-hoc/locally. `cargo doc` runs with RUSTDOCFLAGS="-D warnings" so a
+  # regression in intra-doc links (the 9 `broken_intra_doc_links` warnings
+  # fixed in this work package -- see CHANGELOG.md's 0.3.0 entry) fails CI
+  # instead of silently reappearing. Default features only here; the
+  # `hqc`-feature doc check lives in hqc-feature-build-test above, the one
+  # runner in this workflow with the C toolchain/cmake/libclang `hqc` needs.
+  clippy-and-doc:
+    name: clippy + rustdoc (-D warnings, default features)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache, clippy component)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: cargo doc --no-deps (-D warnings, default features)
+        run: cargo doc --no-deps --locked
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+  # WP3 (X-3): builds `pqc-kem` for wasm32-unknown-unknown (both this crate
+  # directly, redundant with wasm-cdylib-build's coverage of the sibling
+  # crate but cheap and explicit) and the pqc-kem-wasm cdylib for the same
+  # target, then additionally tries wasm32-wasip1 for the root crate.
+  # wasm32-wasip1 was verified locally to build cleanly with
+  # --no-default-features (no getrandom-backend blocker was found for this
+  # crate's own dependency graph on that target); if a future dependency
+  # bump makes that stop being true, this job is the one that will catch
+  # it -- update README.md's "Per-target support matrix" (X-3) accordingly
+  # rather than deleting the step. wasm32-wasip2 is not included here: it
+  # was verified to build locally too, but is left as a locally-verified,
+  # not CI-enforced, claim in the README matrix for now (kept to a minimal
+  # diff for this work package).
+  wasm-targets:
+    name: WASM target matrix (wasm32-unknown-unknown + wasm32-wasip1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache, wasm targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,wasm32-wasip1
+
+      - name: cargo build --target wasm32-unknown-unknown --no-default-features (pqc-kem)
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --locked --verbose
+
+      - name: cargo build --target wasm32-unknown-unknown --no-default-features (pqc-kem-wasm)
+        working-directory: pqc-kem-wasm
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --locked --verbose
+
+      - name: cargo build --target wasm32-wasip1 --no-default-features (pqc-kem)
+        run: cargo build --target wasm32-wasip1 --no-default-features --locked --verbose
+
+  # WP3 (X-3): the WASM JS API regression test (tests/wasm_api_test.mjs)
+  # previously had no CI job at all -- it could only bit-rot silently
+  # (which is exactly what happened to its version-string assertion,
+  # A-D1). This builds the same dist/ artifact build.ps1 produces, via the
+  # equivalent raw wasm-pack invocation (bash, not PowerShell), then runs
+  # the Node test against it.
+  wasm-pack-node-test:
+    name: wasm-pack + node (WASM API regression test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache, wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: wasm-pack build (same invocation as build.ps1, translated to bash)
+        working-directory: pqc-kem-wasm
+        run: wasm-pack build --target web --out-dir ../dist --release -- --no-default-features
+
+      - name: node tests/wasm_api_test.mjs
+        run: node tests/wasm_api_test.mjs
+
+  # WP4 (X-4/P1): Known-Answer Tests against published NIST ACVP ML-KEM
+  # vectors and RFC 7748 X25519 vectors (see
+  # docs/gap-analysis/pqc-kem-gap-roadmap.md §3.7 and tests/vectors/README.md
+  # for provenance). The `kat` feature is non-default and additive -- gates
+  # a handful of deterministic, testing-only entry points
+  # (MlKem*Keypair::from_seed_halves/encapsulate_deterministic/
+  # from_expanded_decapsulation_key_bytes/to_expanded_decapsulation_key_bytes,
+  # fips203::hybrid::x25519_kat) -- so both a default-features build and a
+  # --no-default-features (no_std) build are checked here, matching the
+  # no-std-build job's coverage for the rest of the crate.
+  kat-feature-build-test:
+    name: kat feature (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build --features kat
+        run: cargo build --features kat --locked --verbose
+
+      - name: cargo test --features kat
+        run: cargo test --features kat --locked --verbose
+
+      - name: cargo build --no-default-features --features kat
+        run: cargo build --no-default-features --features kat --locked --verbose
+
+      - name: cargo test --no-default-features --features kat
+        run: cargo test --no-default-features --features kat --locked --verbose

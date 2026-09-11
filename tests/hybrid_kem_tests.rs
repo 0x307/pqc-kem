@@ -260,6 +260,7 @@ fn hybrid_ciphertext_deserialized_still_decapsulates() {
 // ── Secret key serialization roundtrip ───────────────────────────────────────
 
 #[test]
+#[allow(deprecated)] // x25519_secret_bytes/mlkem_secret_bytes deprecated since 0.3.0 — see tests/zeroize_tests.rs for the replacement accessors
 fn hybrid_kem_secret_key_serialization_roundtrip() {
     let keypair = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
 

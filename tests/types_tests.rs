@@ -53,11 +53,13 @@ fn kem_algorithm_as_str_hqc256() {
 }
 
 #[test]
+#[allow(deprecated)] // KemAlgorithm::Bike deprecated since 0.3.0, removed in 0.4.0
 fn kem_algorithm_as_str_bike() {
     assert_eq!(KemAlgorithm::Bike.as_str(), "BIKE");
 }
 
 #[test]
+#[allow(deprecated)] // KemAlgorithm::ClassicMceliece deprecated since 0.3.0, removed in 0.4.0
 fn kem_algorithm_as_str_classic_mceliece() {
     assert_eq!(KemAlgorithm::ClassicMceliece.as_str(), "Classic-McEliece");
 }
@@ -65,6 +67,7 @@ fn kem_algorithm_as_str_classic_mceliece() {
 // ── KemAlgorithm size methods ─────────────────────────────────────────────────
 
 #[test]
+#[allow(deprecated)] // KemAlgorithm::{Bike,ClassicMceliece} deprecated since 0.3.0, removed in 0.4.0
 fn kem_algorithm_public_key_sizes() {
     assert_eq!(KemAlgorithm::MlKem512.public_key_size(), 800);
     assert_eq!(KemAlgorithm::MlKem768.public_key_size(), 1184);
@@ -73,12 +76,14 @@ fn kem_algorithm_public_key_sizes() {
     assert_eq!(KemAlgorithm::Hqc128.public_key_size(), 2249);
     assert_eq!(KemAlgorithm::Hqc192.public_key_size(), 4522);
     assert_eq!(KemAlgorithm::Hqc256.public_key_size(), 7245);
-    // BIKE and McEliece are variable (0)
+    // BIKE and McEliece are variable (0). Both variants are deprecated since
+    // 0.3.0 (never implemented; removed in 0.4.0) but still round-trip.
     assert_eq!(KemAlgorithm::Bike.public_key_size(), 0);
     assert_eq!(KemAlgorithm::ClassicMceliece.public_key_size(), 0);
 }
 
 #[test]
+#[allow(deprecated)] // KemAlgorithm::{Bike,ClassicMceliece} deprecated since 0.3.0, removed in 0.4.0
 fn kem_algorithm_ciphertext_sizes() {
     assert_eq!(KemAlgorithm::MlKem512.ciphertext_size(), 768);
     assert_eq!(KemAlgorithm::MlKem768.ciphertext_size(), 1088);
@@ -97,6 +102,7 @@ fn kem_algorithm_ciphertext_sizes() {
 }
 
 #[test]
+#[allow(deprecated)] // KemAlgorithm::{Bike,ClassicMceliece} deprecated since 0.3.0, removed in 0.4.0
 fn kem_algorithm_shared_secret_size_always_32() {
     // All algorithms return 32 bytes for the shared secret
     let algos = [

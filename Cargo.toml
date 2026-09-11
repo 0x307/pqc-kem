@@ -1,10 +1,10 @@
 [package]
 name        = "pqc-kem"
-version     = "0.2.0"
+version     = "0.3.0"
 edition     = "2021"
 rust-version = "1.85"
 authors     = ["Kenneth Harper"]
-description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — no_std library, WASM-target-compatible"
+description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203) and the X25519+ML-KEM-768 hybrid; optional native-only HQC via liboqs — no_std library, WASM-compatible"
 license     = "MIT OR Apache-2.0"
 repository  = "https://github.com/0x307/pqc-kem"
 keywords    = ["post-quantum", "kem", "ml-kem", "wasm", "cryptography"]
@@ -18,23 +18,36 @@ crate-type = ["rlib"]
 
 [dependencies]
 # NIST FIPS 203 — ML-KEM-512/768/1024 (pure Rust, audited, no_std)
-ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
+#
+# `zeroize` feature (A-Z1, 0.3.0): ml-kem 0.3.2 gates a real `Drop` impl for
+# `DecapsulationKey<P>` behind this feature (it zeroizes the seed (`d`), the
+# implicit-rejection value (`z`), and the expanded decryption key on drop —
+# see `decapsulation_key.rs` upstream). Without it, ML-KEM secret key
+# material was never zeroized. `alloc` was already enabled (required either
+# way for this crate's `Vec<u8>`-based wire types).
+ml-kem = { version = "0.3", default-features = false, features = ["alloc", "zeroize"] }
 
 # Classical hybrid component — X25519 (pure Rust, no_std)
-x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+#
+# `zeroize` feature (A-Z1, 0.3.0): without it, `x25519-dalek`'s `zeroize`
+# dependency is not pulled in at all, so `StaticSecret`/`EphemeralSecret`
+# carried no `Drop` impl and were never zeroized on drop. `default-features
+# = false` is preserved — `zeroize` is additive, not a default-feature
+# dependency, and stays `no_std`-compatible (it does not require `alloc`).
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets", "zeroize"] }
 
 # KDF — HKDF-SHA256 for hybrid shared secret derivation (pure Rust, no_std)
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
-sha3 = { version = "0.10", default-features = false }
 
-# Symmetric encryption post-KEM (pure Rust, no_std)
-aes-gcm          = { version = "0.10", default-features = false, features = ["aes"] }
+# Symmetric encryption post-KEM (pure Rust, no_std). Currently unused in
+# `src/` -- it will move behind a new opt-in `aead-wrap` feature in a later
+# work package (see docs/gap-analysis/pqc-kem-gap-roadmap.md §3.5). Kept
+# non-optional for now; do not treat this as an unused-dep regression.
 chacha20poly1305 = { version = "0.10", default-features = false }
 
 # Encoding — no_std compatible
 base64ct = { version = "1", default-features = false, features = ["alloc"] }
-hex      = { version = "0.4", default-features = false, features = ["alloc"] }
 
 # Multibase encoding for DID Documents (bs58)
 bs58 = { version = "0.5", default-features = false, features = ["alloc"] }
@@ -49,11 +62,13 @@ serde_json = { version = "1", default-features = false, features = ["alloc"] }
 # Error handling — no_std compatible
 thiserror = { version = "2", default-features = false }
 
-# Zeroize secret key material on drop
-zeroize = { version = "1", default-features = false, features = ["derive"] }
-
-# Constant-time comparison
-subtle = { version = "2", default-features = false }
+# Zeroize secret key material on drop. `alloc` is enabled explicitly
+# (rather than relying on feature unification from other dependencies in
+# the graph) so `Vec<u8>: Zeroize`/`ZeroizeOnDrop` (used by `KemSecretKey`,
+# `SharedSecret`, and the `hqc`-feature keypair types) is guaranteed
+# available under every feature combination this crate supports, including
+# `--no-default-features` (no_std + alloc).
+zeroize = { version = "1", default-features = false, features = ["derive", "alloc"] }
 
 # Optional: HQC (NIST 2025 standard) — real implementation via `liboqs`.
 #
@@ -80,21 +95,12 @@ subtle = { version = "2", default-features = false }
 # sources -- verified NOT to require OpenSSL when scoped this narrowly.
 oqs = { version = "0.11", default-features = false, features = ["hqc", "std"], optional = true }
 
-# Optional: Classic McEliece (NIST Round 4 alternate) — NOT YET IMPLEMENTED, will emit compile_error!
-# pqcrypto-classicmceliece's published API does not match this crate's calls
-# against mceliece348864; dep kept for when a real implementation lands.
-# (Out of scope for the HQC/FN-DSA pass — untouched; `pqcrypto-traits` is
-# still needed here even though `hqc` moved off the pqcrypto-* family.)
-pqcrypto-classicmceliece = { version = "0.2", optional = true }
-pqcrypto-traits           = { version = "0.3", optional = true }
-
 [features]
 default = ["std"]
 
 # std: enables std-dependent trait impls
 std = [
     "sha2/std",
-    "sha3/std",
     "hkdf/std",
     "serde/std",
     "serde_json/std",
@@ -106,21 +112,32 @@ std = [
 # Native targets only (C FFI); not wasm32-unknown-unknown compatible.
 hqc = ["dep:oqs"]
 
-# bike: BIKE — NOT YET IMPLEMENTED, will emit compile_error! (no dep needed)
-bike = []
-
-# mceliece: Classic McEliece — NOT YET IMPLEMENTED, will emit compile_error!
-mceliece = ["dep:pqcrypto-classicmceliece", "dep:pqcrypto-traits"]
+# kat: deterministic, testing/interop-only entry points needed to check this
+# crate's ML-KEM output against published Known-Answer-Test vectors (X-4/P1,
+# see docs/gap-analysis/pqc-kem-gap-roadmap.md §3.7 and tests/vectors/README.md).
+# Adds a handful of extra methods to MlKem{512,768,1024}Keypair
+# (from_seed_halves, encapsulate_deterministic,
+# from_expanded_decapsulation_key_bytes, to_expanded_decapsulation_key_bytes)
+# and one free function (fips203::hybrid::x25519_kat). All are rustdoc'd as
+# testing/interop only and MUST NOT be used for production key generation or
+# key exchange. Adds no new dependencies (reuses `ml-kem`'s and
+# `x25519-dalek`'s existing public API); no_std/alloc-compatible.
+kat = []
 
 # CRA-1: this crate is deliberately rlib-only now (see [lib] crate-type
 # above and src/lib.rs) -- a pure Rust/no_std library meant to be imported
 # into other builds, never built standalone on its own. There is no more
 # `wasm`-bindings surface or `standalone` feature here to document specially
 # for docs.rs: `hqc` can't build there regardless (native C toolchain/cmake/
-# libclang, unavailable in docs.rs's sandbox) and `bike`/`mceliece` still
-# fail to compile by design (P2-01). Default features are enough; no
-# [package.metadata.docs.rs] override needed. The WASM bindings that used to
-# live here moved to the sibling `pqc-kem-wasm` crate.
+# libclang, unavailable in docs.rs's sandbox). Default features are enough;
+# no [package.metadata.docs.rs] override needed. The WASM bindings that used
+# to live here moved to the sibling `pqc-kem-wasm` crate.
+#
+# 0.3.0: the `bike` and `mceliece` features (each a permanent
+# `compile_error!` stub — neither was ever implemented) were removed
+# entirely, along with their `src/bike`/`src/mceliece` modules and the
+# `pqcrypto-classicmceliece`/`pqcrypto-traits` dependencies. `--all-features`
+# now builds and tests cleanly. See CHANGELOG.md's 0.3.0 entry.
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # `ml-kem/getrandom` (enabled by our `std` feature) transitively pulls

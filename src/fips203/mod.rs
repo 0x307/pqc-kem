@@ -1,9 +1,9 @@
 //! ML-KEM (NIST FIPS 203) — Key Encapsulation Mechanism
 //!
 //! This module provides all three ML-KEM parameter sets:
-//! - [`MlKem512`]  — Security Level 1 (AES-128 equivalent), 800-byte public key
-//! - [`MlKem768`]  — Security Level 3 (AES-192 equivalent), 1184-byte public key  ← recommended
-//! - [`MlKem1024`] — Security Level 5 (AES-256 equivalent), 1568-byte public key
+//! - [`MlKem512Keypair`]  — Security Level 1 (AES-128 equivalent), 800-byte public key
+//! - [`MlKem768Keypair`]  — Security Level 3 (AES-192 equivalent), 1184-byte public key  ← recommended
+//! - [`MlKem1024Keypair`] — Security Level 5 (AES-256 equivalent), 1568-byte public key
 //!
 //! All implementations use the `ml-kem` crate (RustCrypto), which is:
 //! - Pure Rust (no C FFI)

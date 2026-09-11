@@ -1,16 +1,22 @@
 // =============================================================================
-// wit/pqc-kem.wit  —  REFERENCE DOCUMENT ONLY
+// wit/pqc-kem.wit  —  REFERENCE DOCUMENT ONLY  (pqc-kem-wasm 0.3.0)
 // =============================================================================
 //
 // ⚠️  THIS IS NOT A BUILDABLE WIT INTERFACE  ⚠️
 //
-// This file documents the flat wasm-bindgen API surface of `pqc-kem`.
-// It is written in WIT-style pseudocode for readability, but it CANNOT be
-// used with `jco`, `cargo component`, or any WASM Component Model toolchain.
+// This file is a descriptive interface contract for the flat wasm-bindgen
+// JS API produced by the sibling `pqc-kem-wasm` crate (see
+// `pqc-kem-wasm/src/lib.rs`) — it documents, in WIT-style pseudocode for
+// readability, every class/method/free-function that crate exports. It is
+// NOT parseable by `jco`, `cargo component`, or any WASM Component Model
+// toolchain, and no WASM Component (`wasm32-wasip2` or otherwise) is built
+// anywhere in this repo. `pqc-kem-wasm`'s `crate-type` is `["cdylib"]`
+// built with plain `wasm-bindgen`/`wasm-pack`, not `cargo component`.
 //
-// WHY: The compiled output (`pqc_kem.js` / `pqc_kem_bg.wasm`) is produced by
-//   `wasm-pack` with `wasm-bindgen`, which generates a flat JS module — NOT a
-//   WASM Component Model component. The two formats are incompatible.
+// WHY WIT-style pseudocode at all, if it's not buildable: the shape below
+// (resources with methods, free functions with `result<T, error>` returns)
+// maps closely enough to the actual `#[wasm_bindgen]` surface to serve as a
+// quick reference without needing a running toolchain — nothing more.
 //
 // TO USE THE ACTUAL API:
 //   Import directly from the wasm-pack output:
@@ -19,19 +25,23 @@
 //       from './pqc_kem.js';
 //     await init();
 //
-//   See the JavaScript usage example at the bottom of this file.
+//   See the JavaScript usage example at the bottom of this file, and
+//   README.md's "Quick Start — JavaScript / TypeScript" sections.
 //
-// BUILD COMMAND (produces pqc_kem.js + pqc_kem_bg.wasm):
-//   wasm-pack build --target web --features wasm
+// BUILD COMMAND (produces pqc_kem.js + pqc_kem_bg.wasm in dist/):
+//   powershell -ExecutionPolicy Bypass -File build.ps1
+// which runs, from pqc-kem-wasm/ (there is no `wasm` feature — it was
+// removed; see CHANGELOG.md's 0.3.0 entry):
+//   wasm-pack build --target web --out-dir ../dist --release -- --no-default-features
 //
-// SOURCE OF TRUTH: src/wasm.rs
+// SOURCE OF TRUTH: pqc-kem-wasm/src/lib.rs
 // =============================================================================
 
 // -----------------------------------------------------------------------------
 // PACKAGE (informational — not a real WIT package declaration)
 // -----------------------------------------------------------------------------
 //
-// package 0x307:pqc-kem@0.1.0;   // ← pseudocode only, not parseable by jco
+// package 0x307:pqc-kem@0.3.0;   // ← pseudocode only, not parseable by jco
 
 // =============================================================================
 // CLASS: WasmHybridKemKeypair
@@ -272,7 +282,7 @@
 // pqc_kem_version
 // -----------------------------------------------------------------------------
 //
-// Returns the crate version string (e.g. "0.1.0").
+// Returns the crate version string (e.g. "0.3.0").
 //
 // pqc_kem_version: func() -> string;
 
@@ -359,7 +369,7 @@
 //
 // ─── Utility ─────────────────────────────────────────────────────────────────
 //
-// console.log(pqc_kem_version());    // e.g. "0.1.0"
+// console.log(pqc_kem_version());    // e.g. "0.3.0"
 // console.log(primary_algorithm());  // e.g. "X25519+ML-KEM-768"
 //
 // =============================================================================

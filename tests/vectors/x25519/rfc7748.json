@@ -1,0 +1,35 @@
+{
+  "source": "RFC 7748 (Langley, Hamburg, Turner, January 2016), https://www.rfc-editor.org/rfc/rfc7748 -- fetched live from https://www.rfc-editor.org/rfc/rfc7748.txt on 2026-09-10 and cross-checked byte-for-byte against x25519-dalek 2.0.1's own vendored test vectors (tests/x25519_tests.rs, functions rfc7748_ladder_test1_vectorset1/vectorset2 and the #[ignore] rfc7748_ladder_test2 iterated vectors), found locally at %CARGO_HOME%/registry/src/*/x25519-dalek-2.0.1/tests/x25519_tests.rs.",
+  "note": "All fields are lowercase hex, no 0x prefix. 'x25519_scalar_mult' cases are RFC 7748 section 5.2 (Test Vectors): X25519(scalar, u) = output. 'x25519_iterated' cases are RFC 7748 section 5.2's second test-vector kind (repeatedly apply X25519 starting from k=u=9). 'x25519_diffie_hellman' is RFC 7748 section 6.1's worked Curve25519 ECDH example (Alice/Bob), where each side computes X25519(their_private_key, 9) for their own public key and X25519(their_private_key, other_party_public_key) for the shared secret K.",
+  "x25519_scalar_mult": [
+    {
+      "id": "rfc7748-5.2-vector-1",
+      "scalar": "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4",
+      "u": "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c",
+      "output": "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"
+    },
+    {
+      "id": "rfc7748-5.2-vector-2",
+      "scalar": "4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d",
+      "u": "e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493",
+      "output": "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957"
+    }
+  ],
+  "x25519_iterated": {
+    "note": "Starting k = u = 9 (encoded as a single byte 0x09 followed by 31 zero bytes). For each iteration: k' = X25519(k, u); u' = k; (k, u) = (k', u'). The final k after N iterations is 'output'.",
+    "initial_k_and_u": "0900000000000000000000000000000000000000000000000000000000000000",
+    "cases": [
+      { "iterations": 1, "output": "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079" },
+      { "iterations": 1000, "output": "684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51" },
+      { "iterations": 1000000, "output": "7c3911e0ab2586fd864497297e575e6f3bc601c0883c30df5f4dd2d24f665424", "skip_by_default": true, "skip_reason": "1,000,000 sequential X25519 operations; too slow for a default test run (RFC 7748 marks this vector optional; x25519-dalek gates its own copy behind #[ignore] for the same reason)." }
+    ]
+  },
+  "x25519_diffie_hellman": {
+    "note": "RFC 7748 section 6.1: Alice and Bob each compute X25519(their_private_key, 9) for their public key, exchange public keys, then each compute X25519(own_private_key, other_public_key) to arrive at the same shared secret K.",
+    "alice_private_key": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+    "alice_public_key": "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
+    "bob_private_key": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+    "bob_public_key": "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+    "shared_secret": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
+  }
+}

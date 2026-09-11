@@ -13,11 +13,11 @@
 
 [package]
 name        = "pqc-kem-wasm"
-version     = "0.2.0"
+version     = "0.3.0"
 edition     = "2021"
 rust-version = "1.85"
 authors     = ["Kenneth Harper"]
-description = "WASM/JS bindings and standalone .wasm artifact for pqc-kem"
+description = "WASM/JS bindings and standalone .wasm artifact for pqc-kem's ML-KEM-768 and X25519+ML-KEM-768 hybrid post-quantum KEMs"
 license     = "MIT OR Apache-2.0"
 repository  = "https://github.com/0x307/pqc-kem"
 publish     = false

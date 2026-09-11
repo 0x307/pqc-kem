@@ -34,14 +34,39 @@ pub enum KemAlgorithm {
     Hqc192,
     /// HQC-256 (NIST 2025, Security Level 5) — requires `hqc` feature
     Hqc256,
-    /// BIKE (NIST Round 4 alternate) — requires `bike` feature
+    /// BIKE (NIST Round 4 alternate) — **never implemented in this crate**.
+    ///
+    /// The `bike` feature and `src/bike` module (a permanent
+    /// `compile_error!` stub) were removed entirely in 0.3.0. This variant
+    /// is retained only so previously-serialized values (e.g.
+    /// `"bike"` in JSON) continue to deserialize without error; it carries
+    /// no working implementation in any release and never did. Scheduled
+    /// for removal in 0.4.0 per `STABILITY.md` §3's one-minor-version
+    /// deprecation floor.
+    #[deprecated(
+        since = "0.3.0",
+        note = "BIKE was never implemented; the `bike` feature/module were removed in 0.3.0. This variant is kept only for wire compatibility and will be removed in 0.4.0."
+    )]
     Bike,
-    /// Classic McEliece (NIST Round 4 alternate) — requires `mceliece` feature
+    /// Classic McEliece (NIST Round 4 alternate) — **never implemented in this crate**.
+    ///
+    /// The `mceliece` feature and `src/mceliece` module (a permanent
+    /// `compile_error!` stub) were removed entirely in 0.3.0. This variant
+    /// is retained only so previously-serialized values (e.g.
+    /// `"classic_mceliece"` in JSON) continue to deserialize without error;
+    /// it carries no working implementation in any release and never did.
+    /// Scheduled for removal in 0.4.0 per `STABILITY.md` §3's
+    /// one-minor-version deprecation floor.
+    #[deprecated(
+        since = "0.3.0",
+        note = "Classic McEliece was never implemented; the `mceliece` feature/module were removed in 0.3.0. This variant is kept only for wire compatibility and will be removed in 0.4.0."
+    )]
     ClassicMceliece,
 }
 
 impl KemAlgorithm {
     /// Returns the algorithm identifier string (for DID Documents, JWK, etc.)
+    #[allow(deprecated)] // Bike/ClassicMceliece arms — see variant docs (removed in 0.4.0)
     pub fn as_str(&self) -> &'static str {
         match self {
             KemAlgorithm::MlKem512              => "ML-KEM-512",
@@ -57,6 +82,7 @@ impl KemAlgorithm {
     }
 
     /// Returns the expected public key size in bytes (0 = variable).
+    #[allow(deprecated)] // Bike/ClassicMceliece arms — see variant docs (removed in 0.4.0)
     pub fn public_key_size(&self) -> usize {
         match self {
             KemAlgorithm::MlKem512              => 800,
@@ -81,6 +107,7 @@ impl KemAlgorithm {
     /// reflects the HQC round-4/2023 parameter revision to the
     /// error-correcting code, which changed ciphertext size at the 128- and
     /// 256-bit levels but not the 192-bit level.
+    #[allow(deprecated)] // Bike/ClassicMceliece arms — see variant docs (removed in 0.4.0)
     pub fn ciphertext_size(&self) -> usize {
         match self {
             KemAlgorithm::MlKem512              => 768,
@@ -156,6 +183,13 @@ impl KemPublicKey {
 }
 
 /// A KEM secret key (raw bytes). Zeroized on drop.
+///
+/// # Secret handling
+/// `bytes` is zeroized on drop (`#[derive(Zeroize, ZeroizeOnDrop)]`).
+/// `algorithm` is `#[zeroize(skip)]`d — it is a plain enum tag with no
+/// secret data. Cloning this type duplicates the secret bytes into a new,
+/// independently-zeroizing allocation; the clone is zeroized on its own
+/// drop just like the original.
 #[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KemSecretKey {
     /// The algorithm this key belongs to.
@@ -206,6 +240,11 @@ impl KemCiphertext {
 }
 
 /// A shared secret produced by KEM encapsulation/decapsulation. Zeroized on drop.
+///
+/// # Secret handling
+/// `bytes` is zeroized on drop (`#[derive(Zeroize, ZeroizeOnDrop)]`).
+/// Cloning this type duplicates the secret bytes into a new,
+/// independently-zeroizing allocation.
 #[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct SharedSecret {
     /// Raw shared secret bytes (always 32 bytes for all supported algorithms).

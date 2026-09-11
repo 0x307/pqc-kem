@@ -106,3 +106,49 @@ There's no team and no on-call rotation behind this project. In practice:
 
 This policy is shared across every repo in this family, not restated per repo. Each repo's
 `SECURITY.md` and `CHANGELOG.md` reference this document rather than duplicating it.
+
+## 8. Active deprecations (this repo: `pqc-kem`)
+
+Per §3, tracked here until each item's removal ships (and called out again in
+`CHANGELOG.md` at that point):
+
+| Item | Deprecated since | Migration | Earliest removal |
+|---|---|---|---|
+| `KemAlgorithm::Bike` | 0.3.0 | Never had a working implementation (the `bike` feature was a permanent `compile_error!` stub, removed entirely in 0.3.0). No migration target — stop constructing or matching on this variant. Existing serialized (`"bike"`) values still deserialize. | 0.4.0 |
+| `KemAlgorithm::ClassicMceliece` | 0.3.0 | Never had a working implementation (the `mceliece` feature was a permanent `compile_error!` stub, removed entirely in 0.3.0). No migration target — stop constructing or matching on this variant. Existing serialized (`"classic_mceliece"`) values still deserialize. | 0.4.0 |
+| `HybridKemKeypair::x25519_secret_bytes()` | 0.3.0 | Returns a plain `[u8; 32]` that is never zeroized on drop (A-Z1). Use [`HybridKemKeypair::x25519_secret()`], which returns a `KemSecretKey` (zeroized on drop) with the identical 32 bytes. | 0.4.0 |
+| `HybridKemKeypair::mlkem_secret_bytes()` | 0.3.0 | Returns a plain `Vec<u8>` that is never zeroized on drop, and silently returns an empty `Vec` instead of an error if the seed is unavailable (A-Z1). Use [`HybridKemKeypair::mlkem_seed()`], which returns `Result<KemSecretKey, KemError>` (zeroized on drop, and `Err` instead of silently-empty on failure) with the identical 64 bytes on success. | 0.4.0 |
+
+The `Bike`/`ClassicMceliece` variants keep their existing `serde` wire representation
+unchanged in 0.3.0 — only the Rust-side item carries `#[deprecated]`; no JSON/wire
+compatibility is broken. The two `HybridKemKeypair` accessors above are ordinary methods
+(not wire types) and carry no JSON/serde implications either way.
+
+## 9. Testing-only APIs — no stability guarantee
+
+The non-default `kat` Cargo feature (added 0.3.0; see `docs/gap-analysis/pqc-kem-gap-roadmap.md`
+§3.7, X-4/P1) gates a small set of items that exist solely to check this crate against published
+Known-Answer-Test vectors:
+
+- `MlKem512Keypair`/`MlKem768Keypair`/`MlKem1024Keypair`: `from_seed_halves`,
+  `encapsulate_deterministic`, `from_expanded_decapsulation_key_bytes`,
+  `to_expanded_decapsulation_key_bytes`
+- `fips203::hybrid::x25519_kat` (free function)
+
+**These are explicitly outside the §2 breaking-change contract.** They may be added to,
+changed, or removed in any `0.x` release — including a patch release — without a deprecation
+cycle, because:
+
+1. They are gated behind a non-default feature that exists purely for this crate's own test
+   suite (`tests/kat_ml_kem.rs`, `tests/kat_x25519.rs`), not for downstream application code.
+2. Every one of them is rustdoc'd "KAT-only" / "not a general-purpose API" and documents that it
+   must never be used for production key generation or key exchange — using them outside a test
+   context is already a misuse of the documented contract, so changing them carries no silent
+   breakage risk for correctly-used code.
+3. Enabling `kat` at all is itself an explicit, deliberate opt-in (`--features kat`), unlike
+   `std`/`hqc`, which gate real production functionality.
+
+If any of these items is ever promoted to a stable, non-`kat`-gated API (for example, as part of
+WP5's hybrid-profile deterministic-encapsulation work), that promotion will get its own
+`CHANGELOG.md` "Added" entry and, from that point forward, the item is bound by §2 like any
+other public symbol. Until then, treat everything behind `kat` as unstable test tooling.
