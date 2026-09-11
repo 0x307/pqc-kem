@@ -303,6 +303,120 @@ impl HybridKemKeypair {
             .map(|s| s.as_slice().to_vec())
             .unwrap_or_default()
     }
+
+    /// Encode this keypair's secret key material as the canonical **profile
+    /// v1** (`HYBRID_PROFILE_V1`) 96-byte layout:
+    /// `x25519_sk(32) ‖ mlkem_d(32) ‖ mlkem_z(32)`. See
+    /// `docs/hybrid-profiles.md`. For storage only — never on the wire.
+    pub fn to_secret_bytes(&self) -> KemResult<KemSecretKey> {
+        let seed = self.mlkem_dk.to_seed().ok_or_else(|| {
+            KemError::Internal("ML-KEM-768 decapsulation key has no recoverable seed".into())
+        })?;
+        let mut out = Vec::with_capacity(96);
+        out.extend_from_slice(&self.x25519_secret.to_bytes());
+        out.extend_from_slice(seed.as_slice());
+        Ok(KemSecretKey::new(KemAlgorithm::HybridX25519MlKem768, out))
+    }
+
+    /// Restore a keypair from the canonical 96-byte v1 profile secret-key
+    /// layout produced by [`Self::to_secret_bytes`]. Length-checked; returns
+    /// [`KemError::InvalidKey`] (never panics) on a mismatched length.
+    pub fn from_secret_bytes(bytes: &[u8]) -> KemResult<Self> {
+        if bytes.len() != 96 {
+            return Err(KemError::InvalidKey(
+                format!("hybrid v1 profile secret key must be 96 bytes, got {}", bytes.len())
+            ));
+        }
+        Self::from_secret_key_bytes(&bytes[..32], &bytes[32..])
+    }
+}
+
+/// **KAT-only entry points for the v1 profile.** Gated behind the `kat`
+/// Cargo feature (non-default). See `docs/hybrid-profiles.md` and
+/// `tests/vectors/hybrid-v1/vectors.json` for provenance/vectors.
+#[cfg(feature = "kat")]
+impl HybridKemKeypair {
+    /// **KAT-only — do not use for production key generation.**
+    ///
+    /// Construct a keypair directly from its three raw secret components:
+    /// the 32-byte X25519 static secret and the FIPS 203 keyGen seed halves
+    /// `d`/`z` (see [`crate::fips203::ml_kem_768::MlKem768Keypair::from_seed_halves`]
+    /// for the ML-KEM-only equivalent). Equivalent to
+    /// `Self::from_secret_key_bytes(x25519_sk, &(d ‖ z))`, provided so KAT
+    /// loaders don't need to concatenate byte arrays by hand.
+    pub fn from_secrets(x25519_sk: &[u8; 32], d: &[u8; 32], z: &[u8; 32]) -> Self {
+        let x25519_secret = StaticSecret::from(*x25519_sk);
+        let x25519_public = X25519PublicKey::from(&x25519_secret);
+
+        let mut seed_bytes = [0u8; 64];
+        seed_bytes[..32].copy_from_slice(d);
+        seed_bytes[32..].copy_from_slice(z);
+        let seed: Seed = seed_bytes.into();
+        let mlkem_dk = DecapsulationKey::<MlKem768>::from_seed(seed);
+        let mlkem_ek = mlkem_dk.encapsulation_key().clone();
+
+        Self {
+            x25519_secret,
+            x25519_public,
+            mlkem_ek,
+            mlkem_dk,
+        }
+    }
+
+    /// **KAT-only — do not use for production encapsulation.**
+    ///
+    /// Deterministic encapsulation using caller-supplied X25519 ephemeral
+    /// secret `eph_x25519_sk` and ML-KEM-768 randomness `m`, instead of
+    /// drawing both from an RNG (this is exactly what
+    /// [`HybridKemKeypair::encapsulate`] does internally, with RNG-drawn
+    /// values for both). Exposed so test code can reproduce a fixed hybrid
+    /// v1 ciphertext/shared-secret pair for a frozen vector file.
+    pub fn encapsulate_deterministic(
+        recipient_public_key: &HybridPublicKey,
+        eph_x25519_sk: &[u8; 32],
+        m: &[u8; 32],
+    ) -> KemResult<(HybridKemCiphertext, SharedSecret)> {
+        // ── Step 1: X25519 (deterministic ephemeral) ──────────────────────
+        let ephemeral_secret = StaticSecret::from(*eph_x25519_sk);
+        let ephemeral_public = X25519PublicKey::from(&ephemeral_secret);
+
+        let x25519_bytes = recipient_public_key.x25519_bytes()?;
+        let x25519_arr: [u8; 32] = x25519_bytes.as_slice().try_into()
+            .map_err(|_| KemError::InvalidKey(
+                format!("X25519 public key must be 32 bytes, got {}", x25519_bytes.len())
+            ))?;
+        let recipient_x25519 = X25519PublicKey::from(x25519_arr);
+        let x25519_ss = ephemeral_secret.diffie_hellman(&recipient_x25519);
+
+        // ── Step 2: ML-KEM-768 (deterministic encapsulation) ──────────────
+        let mlkem_bytes = recipient_public_key.mlkem_bytes()?;
+        let ek_key: ml_kem::kem::Key<EncapsulationKey<MlKem768>> = mlkem_bytes.as_slice().try_into()
+            .map_err(|_| KemError::InvalidKey(
+                format!("ML-KEM-768 public key must be 1184 bytes, got {}", mlkem_bytes.len())
+            ))?;
+        let mlkem_ek = EncapsulationKey::<MlKem768>::new(&ek_key)
+            .map_err(|_| KemError::InvalidKey("ML-KEM-768 public key validation failed".into()))?;
+
+        let m_arr: ml_kem::B32 = (*m).into();
+        let (mlkem_ct, mlkem_ss) = mlkem_ek.encapsulate_deterministic(&m_arr);
+
+        // ── Step 3: Combine via HKDF-SHA256 (identical to encapsulate()) ──
+        let mut combined = [0u8; 64];
+        combined[..32].copy_from_slice(x25519_ss.as_bytes());
+        combined[32..].copy_from_slice(mlkem_ss.as_slice());
+
+        let hkdf = Hkdf::<Sha256>::new(None, &combined);
+        let mut shared_key = [0u8; 32];
+        hkdf.expand(HYBRID_KEM_INFO, &mut shared_key)
+            .map_err(|e| KemError::KeyDerivation(format!("{:?}", e)))?;
+
+        let ciphertext = HybridKemCiphertext::new(
+            ephemeral_public.as_bytes(),
+            mlkem_ct.as_slice(),
+        );
+
+        Ok((ciphertext, SharedSecret::new(shared_key.to_vec())))
+    }
 }
 
 /// **KAT-only helper — not a general-purpose X25519 API.**

@@ -40,6 +40,15 @@ x25519-dalek = { version = "2", default-features = false, features = ["static_se
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 
+# SHA3-256 / SHAKE-256 for the X-Wing (HybridKem-X25519-MLKEM768-v2) combiner
+# and decapsulation-key expansion (WP5/K-5, docs/hybrid-profiles.md). Pure
+# Rust, no_std-compatible (RustCrypto, same `digest` trait family already in
+# this graph via `sha2`/`hkdf`). `digest` is depended on directly (not just
+# transitively through `sha3`) so `xwing.rs` can name its
+# `Update`/`ExtendableOutput`/`XofReader`/`Digest` traits explicitly.
+sha3 = { version = "0.10", default-features = false }
+digest = { version = "0.10", default-features = false }
+
 # Symmetric encryption post-KEM (pure Rust, no_std). Currently unused in
 # `src/` -- it will move behind a new opt-in `aead-wrap` feature in a later
 # work package (see docs/gap-analysis/pqc-kem-gap-roadmap.md §3.5). Kept
@@ -151,6 +160,17 @@ getrandom = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 [dev-dependencies]
 rand = "0.8"
 hex-literal = "0.4"
+
+# Used directly (not via this crate's own wrappers) by
+# tests/kat_hybrid_v1.rs's independent low-level recomputation of one hybrid
+# v1 vector — see docs/hybrid-profiles.md "Test-vector format and
+# provenance" and tests/vectors/README.md. Same versions/feature sets as the
+# equivalent normal dependencies above; adding them here too is additive
+# (cargo unifies the feature sets for the same package/target).
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
+hkdf = { version = "0.12", default-features = false }
+sha2 = { version = "0.10", default-features = false }
 
 # `panic = "abort"` matters when THIS crate is the one being built directly
 # (root package) -- e.g. `cargo test --no-default-features`: the test

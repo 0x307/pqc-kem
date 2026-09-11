@@ -54,7 +54,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 use wasm_bindgen::prelude::*;
 
-use pqc_kem::fips203::{HybridKemKeypair, MlKem512Keypair, MlKem768Keypair, MlKem1024Keypair};
+use pqc_kem::fips203::{HybridKemKeypair, MlKem512Keypair, MlKem768Keypair, MlKem1024Keypair, XWingKeypair, XWingCiphertext, XWingPublicKey};
 use pqc_kem::types::{HybridKemCiphertext, HybridPublicKey, KemAlgorithm, KemCiphertext, KemPublicKey};
 
 // ── RNG for WASM ──────────────────────────────────────────────────────────────

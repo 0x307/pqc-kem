@@ -26,8 +26,15 @@ pub enum KemAlgorithm {
     MlKem768,
     /// ML-KEM-1024 (NIST FIPS 203, Security Level 5)
     MlKem1024,
-    /// Hybrid: X25519 + ML-KEM-768 — primary construction
+    /// Hybrid: X25519 + ML-KEM-768 — primary construction (profile v1,
+    /// `HYBRID_PROFILE_V1`; see `docs/hybrid-profiles.md`)
     HybridX25519MlKem768,
+    /// X-Wing: X25519 + ML-KEM-768, per `draft-connolly-cfrg-xwing-kem`
+    /// (profile v2, `HYBRID_PROFILE_V2`) — same component KEMs as
+    /// [`KemAlgorithm::HybridX25519MlKem768`], different combiner and byte
+    /// layout (ML-KEM first). Recommended for new deployments; see
+    /// `docs/hybrid-profiles.md`. Added 0.3.0.
+    XWing,
     /// HQC-128 (NIST 2025, Security Level 1) — requires `hqc` feature
     Hqc128,
     /// HQC-192 (NIST 2025, Security Level 3) — requires `hqc` feature
@@ -73,6 +80,7 @@ impl KemAlgorithm {
             KemAlgorithm::MlKem768              => "ML-KEM-768",
             KemAlgorithm::MlKem1024             => "ML-KEM-1024",
             KemAlgorithm::HybridX25519MlKem768  => "X25519+ML-KEM-768",
+            KemAlgorithm::XWing                 => "X-Wing",
             KemAlgorithm::Hqc128                => "HQC-128",
             KemAlgorithm::Hqc192                => "HQC-192",
             KemAlgorithm::Hqc256                => "HQC-256",
@@ -89,6 +97,7 @@ impl KemAlgorithm {
             KemAlgorithm::MlKem768              => 1184,
             KemAlgorithm::MlKem1024             => 1568,
             KemAlgorithm::HybridX25519MlKem768  => 32 + 1184, // 1216
+            KemAlgorithm::XWing                 => 1216, // pk_M(1184) ‖ pk_X(32)
             KemAlgorithm::Hqc128                => 2249,
             KemAlgorithm::Hqc192                => 4522,
             KemAlgorithm::Hqc256                => 7245,
@@ -114,6 +123,7 @@ impl KemAlgorithm {
             KemAlgorithm::MlKem768              => 1088,
             KemAlgorithm::MlKem1024             => 1568,
             KemAlgorithm::HybridX25519MlKem768  => 32 + 1088, // 1120
+            KemAlgorithm::XWing                 => 1120, // ct_M(1088) ‖ ct_X(32)
             KemAlgorithm::Hqc128                => 4433,
             KemAlgorithm::Hqc192                => 8978,
             KemAlgorithm::Hqc256                => 14421,
@@ -323,6 +333,49 @@ impl HybridKemCiphertext {
         serde_json::from_str(s)
             .map_err(|e| KemError::Serialization(e.to_string()))
     }
+
+    /// Canonical **profile v1** (`HYBRID_PROFILE_V1`) byte encoding:
+    /// `x25519_eph_pk(32) ‖ mlkem_ct(1088)` = 1120 bytes. See
+    /// `docs/hybrid-profiles.md`. This is additive — the JSON wire format
+    /// above (`classical_ct`/`pqc_ct`/`algorithm`) is unchanged and remains
+    /// the compatibility-critical shape SAGP consumes.
+    pub const BYTES: usize = 1120;
+
+    /// Encode this ciphertext as the canonical 1120-byte v1 profile layout.
+    ///
+    /// Fails with [`KemError::InvalidCiphertext`] if the decoded component
+    /// lengths don't match the profile (32 / 1088 bytes) — never panics.
+    pub fn to_bytes(&self) -> KemResult<Vec<u8>> {
+        let x25519 = self.x25519_bytes()?;
+        let mlkem = self.mlkem_bytes()?;
+        if x25519.len() != 32 {
+            return Err(KemError::InvalidCiphertext(
+                format!("hybrid v1 profile: X25519 component must be 32 bytes, got {}", x25519.len())
+            ));
+        }
+        if mlkem.len() != 1088 {
+            return Err(KemError::InvalidCiphertext(
+                format!("hybrid v1 profile: ML-KEM-768 component must be 1088 bytes, got {}", mlkem.len())
+            ));
+        }
+        let mut out = Vec::with_capacity(Self::BYTES);
+        out.extend_from_slice(&x25519);
+        out.extend_from_slice(&mlkem);
+        Ok(out)
+    }
+
+    /// Decode the canonical 1120-byte v1 profile layout produced by
+    /// [`Self::to_bytes`]. Length-checked; returns [`KemError::InvalidCiphertext`]
+    /// (never panics) on a mismatched length. Rebuilds the same JSON-facing
+    /// fields [`Self::new`] would.
+    pub fn from_bytes(bytes: &[u8]) -> KemResult<Self> {
+        if bytes.len() != Self::BYTES {
+            return Err(KemError::InvalidCiphertext(
+                format!("hybrid v1 profile ciphertext must be {} bytes, got {}", Self::BYTES, bytes.len())
+            ));
+        }
+        Ok(Self::new(&bytes[..32], &bytes[32..]))
+    }
 }
 
 /// Wire format for a Hybrid X25519 + ML-KEM-768 public key.
@@ -385,6 +438,105 @@ impl HybridPublicKey {
     pub fn from_json(s: &str) -> KemResult<Self> {
         serde_json::from_str(s)
             .map_err(|e| KemError::Serialization(e.to_string()))
+    }
+
+    /// Canonical **profile v1** (`HYBRID_PROFILE_V1`) byte encoding:
+    /// `x25519_pk(32) ‖ mlkem_ek(1184)` = 1216 bytes. See
+    /// `docs/hybrid-profiles.md`. Additive — the JSON wire format above
+    /// (`x25519_key`/`mlkem_key`/`*_multibase`) is unchanged.
+    pub const BYTES: usize = 1216;
+
+    /// Encode this public key as the canonical 1216-byte v1 profile layout.
+    ///
+    /// Fails with [`KemError::InvalidKey`] if the decoded component lengths
+    /// don't match the profile (32 / 1184 bytes) — never panics.
+    pub fn to_bytes(&self) -> KemResult<Vec<u8>> {
+        let x25519 = self.x25519_bytes()?;
+        let mlkem = self.mlkem_bytes()?;
+        if x25519.len() != 32 {
+            return Err(KemError::InvalidKey(
+                format!("hybrid v1 profile: X25519 component must be 32 bytes, got {}", x25519.len())
+            ));
+        }
+        if mlkem.len() != 1184 {
+            return Err(KemError::InvalidKey(
+                format!("hybrid v1 profile: ML-KEM-768 component must be 1184 bytes, got {}", mlkem.len())
+            ));
+        }
+        let mut out = Vec::with_capacity(Self::BYTES);
+        out.extend_from_slice(&x25519);
+        out.extend_from_slice(&mlkem);
+        Ok(out)
+    }
+
+    /// Decode the canonical 1216-byte v1 profile layout produced by
+    /// [`Self::to_bytes`]. Length-checked; returns [`KemError::InvalidKey`]
+    /// (never panics) on a mismatched length. Rebuilds the same
+    /// JSON-facing fields [`Self::new`] would (including the multibase
+    /// fields).
+    pub fn from_bytes(bytes: &[u8]) -> KemResult<Self> {
+        if bytes.len() != Self::BYTES {
+            return Err(KemError::InvalidKey(
+                format!("hybrid v1 profile public key must be {} bytes, got {}", Self::BYTES, bytes.len())
+            ));
+        }
+        Ok(Self::new(&bytes[..32], &bytes[32..]))
+    }
+}
+
+// ── Named Hybrid KEM Profiles (K-5) ───────────────────────────────────────────
+
+/// Identifies a named hybrid KEM profile (K-5, `docs/hybrid-profiles.md`).
+///
+/// Both profiles combine X25519 (RFC 7748) and ML-KEM-768 (FIPS 203) — they
+/// differ only in combiner and canonical byte layout:
+///
+/// - [`HybridProfile::V1`] — this crate's original combiner
+///   (`HKDF-SHA256(x25519_ss ‖ mlkem_ss, info="pqc-kem-hybrid-v1")`,
+///   `HybridKemKeypair`), wire-compatible with every prior 0.x release.
+///   Does **not** bind the ciphertext/public key into the KDF.
+/// - [`HybridProfile::V2XWing`] — X-Wing (`draft-connolly-cfrg-xwing-kem`,
+///   `XWingKeypair`), `SHA3-256`-based combiner that binds `ct_X`/`pk_X`.
+///   **Recommended for new deployments.**
+///
+/// `PRIMARY_ALGORITHM`/`HYBRID_PROFILE_ID` still point at v1 for wire
+/// compatibility with existing SAGP deployments; this may change in a
+/// future major/minor version once v2 has had time to see adoption.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HybridProfile {
+    /// `HybridKem-X25519-MLKEM768-v1` — this crate's original combiner.
+    V1,
+    /// `HybridKem-X25519-MLKEM768-v2` — X-Wing.
+    V2XWing,
+}
+
+impl HybridProfile {
+    /// The profile's string identifier (`HYBRID_PROFILE_V1`/`HYBRID_PROFILE_V2`).
+    pub fn id(&self) -> &'static str {
+        match self {
+            HybridProfile::V1 => crate::HYBRID_PROFILE_V1,
+            HybridProfile::V2XWing => crate::HYBRID_PROFILE_V2,
+        }
+    }
+
+    /// Public key size in bytes. Identical (1216) for both profiles — they
+    /// differ in component *order*, not size (see `docs/hybrid-profiles.md`).
+    pub fn pk_len(&self) -> usize {
+        1216
+    }
+
+    /// Ciphertext size in bytes. Identical (1120) for both profiles.
+    pub fn ct_len(&self) -> usize {
+        1120
+    }
+
+    /// Secret-key storage size in bytes. v1: `x25519_sk(32) ‖ d(32) ‖ z(32)`
+    /// = 96. X-Wing: a single 32-byte seed.
+    pub fn sk_len(&self) -> usize {
+        match self {
+            HybridProfile::V1 => 96,
+            HybridProfile::V2XWing => 32,
+        }
     }
 }
 

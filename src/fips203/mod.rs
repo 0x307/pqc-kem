@@ -16,10 +16,15 @@ pub mod ml_kem_768;
 pub mod ml_kem_1024;
 pub mod hybrid;
 
+/// X-Wing hybrid KEM (hybrid profile v2, `HYBRID_PROFILE_V2`) — see
+/// `docs/hybrid-profiles.md`.
+pub mod xwing;
+
 pub use ml_kem_512::MlKem512Keypair;
 pub use ml_kem_768::MlKem768Keypair;
 pub use ml_kem_1024::MlKem1024Keypair;
 pub use hybrid::HybridKemKeypair;
+pub use xwing::{XWingCiphertext, XWingKeypair, XWingPublicKey};
 
 #[cfg(test)]
 mod tests {

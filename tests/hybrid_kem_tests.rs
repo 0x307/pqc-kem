@@ -291,3 +291,132 @@ fn hybrid_kem_secret_key_serialization_roundtrip() {
         "restored keypair must recover same shared secret"
     );
 }
+
+// ── K-5 / WP5: hybrid profile v1 byte-encoding API ───────────────────────────
+
+#[test]
+fn hybrid_public_key_v1_to_bytes_from_bytes_roundtrip() {
+    let keypair = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let pub_key = keypair.public_key();
+
+    let bytes = pub_key.to_bytes().expect("to_bytes failed");
+    assert_eq!(bytes.len(), HybridPublicKey::BYTES);
+    assert_eq!(bytes.len(), 1216);
+
+    let restored = HybridPublicKey::from_bytes(&bytes).expect("from_bytes failed");
+    assert_eq!(pub_key, restored, "v1 public key byte round-trip must be lossless");
+}
+
+#[test]
+fn hybrid_ciphertext_v1_to_bytes_from_bytes_roundtrip() {
+    let recipient = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let pub_key = recipient.public_key();
+    let (ct, sender_ss) = HybridKemKeypair::encapsulate_to(&mut OsRng, &pub_key)
+        .expect("encapsulate failed");
+
+    let bytes = ct.to_bytes().expect("to_bytes failed");
+    assert_eq!(bytes.len(), HybridKemCiphertext::BYTES);
+    assert_eq!(bytes.len(), 1120);
+
+    let restored = HybridKemCiphertext::from_bytes(&bytes).expect("from_bytes failed");
+    assert_eq!(ct, restored, "v1 ciphertext byte round-trip must be lossless");
+
+    let recovered = recipient.decapsulate(&restored).expect("decapsulate (restored ct) failed");
+    assert_eq!(sender_ss.bytes, recovered.bytes);
+}
+
+#[test]
+fn hybrid_public_key_v1_from_bytes_wrong_length_rejected() {
+    assert!(HybridPublicKey::from_bytes(&[0u8; 100]).is_err(), "wrong-length must be rejected, not panic");
+    assert!(HybridPublicKey::from_bytes(&[0u8; 1217]).is_err());
+    assert!(HybridPublicKey::from_bytes(&[]).is_err());
+}
+
+#[test]
+fn hybrid_ciphertext_v1_from_bytes_wrong_length_rejected() {
+    assert!(HybridKemCiphertext::from_bytes(&[0u8; 100]).is_err(), "wrong-length must be rejected, not panic");
+    assert!(HybridKemCiphertext::from_bytes(&[0u8; 1121]).is_err());
+    assert!(HybridKemCiphertext::from_bytes(&[]).is_err());
+}
+
+#[test]
+fn hybrid_v1_secret_bytes_roundtrip() {
+    let keypair = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let sk = keypair.to_secret_bytes().expect("to_secret_bytes failed");
+    assert_eq!(sk.bytes.len(), 96, "v1 secret key must be 96 bytes (x25519_sk ‖ d ‖ z)");
+
+    let restored = HybridKemKeypair::from_secret_bytes(&sk.bytes).expect("from_secret_bytes failed");
+    assert_eq!(keypair.public_key(), restored.public_key());
+
+    let pub_key = keypair.public_key();
+    let (ct, sender_ss) = HybridKemKeypair::encapsulate_to(&mut OsRng, &pub_key)
+        .expect("encapsulate failed");
+    let recovered = restored.decapsulate(&ct).expect("decapsulate with restored keypair failed");
+    assert_eq!(sender_ss.bytes, recovered.bytes);
+}
+
+#[test]
+fn hybrid_v1_secret_bytes_wrong_length_rejected() {
+    assert!(HybridKemKeypair::from_secret_bytes(&[0u8; 50]).is_err());
+    assert!(HybridKemKeypair::from_secret_bytes(&[0u8; 97]).is_err());
+}
+
+#[test]
+fn hybrid_public_key_v1_json_shape_unchanged_after_byte_api_addition() {
+    // Freezes the exact JSON field set (K-5 compatibility constraint: the
+    // byte-encoding API added in 0.3.0 must not change the JSON wire shape
+    // SAGP consumes today).
+    let keypair = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let pub_key = keypair.public_key();
+    let json = pub_key.to_json().expect("to_json failed");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let obj = value.as_object().expect("JSON object");
+    let mut keys: Vec<&str> = obj.keys().map(|s| s.as_str()).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec!["mlkem_key", "mlkem_multibase", "x25519_key", "x25519_multibase"],
+        "HybridPublicKey JSON field set must be unchanged"
+    );
+}
+
+#[test]
+fn hybrid_ciphertext_v1_json_shape_unchanged_after_byte_api_addition() {
+    let recipient = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let pub_key = recipient.public_key();
+    let (ct, _) = HybridKemKeypair::encapsulate_to(&mut OsRng, &pub_key)
+        .expect("encapsulate failed");
+    let json = ct.to_json().expect("to_json failed");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let obj = value.as_object().expect("JSON object");
+    let mut keys: Vec<&str> = obj.keys().map(|s| s.as_str()).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec!["algorithm", "classical_ct", "pqc_ct"],
+        "HybridKemCiphertext JSON field set must be unchanged"
+    );
+}
+
+// ── K-5: HybridProfile enum / consts ─────────────────────────────────────────
+
+#[test]
+fn hybrid_profile_v1_matches_primary_algorithm_constants() {
+    use pqc_kem::types::HybridProfile;
+    assert_eq!(HybridProfile::V1.id(), pqc_kem::HYBRID_PROFILE_V1);
+    assert_eq!(HybridProfile::V1.id(), pqc_kem::HYBRID_PROFILE_ID);
+    assert_eq!(HybridProfile::V1.id(), "HybridKem-X25519-MLKEM768-v1");
+    assert_eq!(HybridProfile::V1.pk_len(), 1216);
+    assert_eq!(HybridProfile::V1.ct_len(), 1120);
+    assert_eq!(HybridProfile::V1.sk_len(), 96);
+}
+
+#[test]
+fn hybrid_profile_v2_xwing_constants() {
+    use pqc_kem::types::HybridProfile;
+    assert_eq!(HybridProfile::V2XWing.id(), pqc_kem::HYBRID_PROFILE_V2);
+    assert_eq!(HybridProfile::V2XWing.id(), "HybridKem-X25519-MLKEM768-v2");
+    assert_eq!(HybridProfile::V2XWing.pk_len(), 1216);
+    assert_eq!(HybridProfile::V2XWing.ct_len(), 1120);
+    assert_eq!(HybridProfile::V2XWing.sk_len(), 32);
+}

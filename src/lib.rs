@@ -93,6 +93,7 @@ pub mod hqc;
 pub use error::{KemError, KemResult};
 pub use types::{
     HybridKemCiphertext,
+    HybridProfile,
     HybridPublicKey,
     KemAlgorithm,
     KemCiphertext,
@@ -107,6 +108,7 @@ pub use fips203::{
     MlKem512Keypair,
     MlKem768Keypair,
     MlKem1024Keypair,
+    XWingKeypair,
 };
 
 // ── Version ───────────────────────────────────────────────────────────────────
@@ -117,5 +119,27 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Algorithm suite identifier for the primary hybrid construction.
 pub const PRIMARY_ALGORITHM: &str = "X25519+ML-KEM-768";
 
-/// HKDF info string used in the hybrid KEM construction.
+/// HKDF info string used in the hybrid KEM construction (profile v1).
 pub const HYBRID_KEM_INFO: &str = "pqc-kem-hybrid-v1";
+
+// ── Named Hybrid KEM Profiles (K-5, WP5) ───────────────────────────────────────
+//
+// See `docs/hybrid-profiles.md` for the full normative spec of both
+// profiles: canonical byte layouts, combiners, and test vectors.
+
+/// Profile identifier for this crate's original hybrid combiner
+/// (`fips203::HybridKemKeypair`) — wire-compatible with every prior 0.x
+/// release. `HKDF-SHA256(x25519_ss ‖ mlkem_ss, info="pqc-kem-hybrid-v1")`;
+/// does not bind ciphertext/public key into the KDF.
+pub const HYBRID_PROFILE_V1: &str = "HybridKem-X25519-MLKEM768-v1";
+
+/// Profile identifier for X-Wing (`fips203::XWingKeypair`,
+/// `draft-connolly-cfrg-xwing-kem`) — `SHA3-256`-based combiner that binds
+/// `ct_X`/`pk_X`. **Recommended for new deployments.**
+pub const HYBRID_PROFILE_V2: &str = "HybridKem-X25519-MLKEM768-v2";
+
+/// Alias for [`HYBRID_PROFILE_V1`], kept for wire/API compatibility with
+/// SAGP deployments that already treat this constant as identifying
+/// `PRIMARY_ALGORITHM`'s hybrid construction. Points at v1, not v2 — see
+/// `docs/hybrid-profiles.md` for the rationale and migration guidance.
+pub const HYBRID_PROFILE_ID: &str = HYBRID_PROFILE_V1;
