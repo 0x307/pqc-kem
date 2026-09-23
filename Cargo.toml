@@ -84,11 +84,12 @@ sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
 digest = { version = "0.10", default-features = false }
 
-# Symmetric encryption post-KEM (pure Rust, no_std). Currently unused in
-# `src/` -- it will move behind a new opt-in `aead-wrap` feature in a later
-# work package (WP6). Kept
-# non-optional for now; do not treat this as an unused-dep regression.
-chacha20poly1305 = { version = "0.10", default-features = false }
+# Symmetric encryption post-KEM (pure Rust, no_std), used only by the opt-in
+# `aead-wrap` feature (src/aead_wrap.rs). Optional since that module landed:
+# before it, this was a non-optional dependency nothing called, compiled
+# into every build. `alloc` stays off; aead_wrap uses the in-place detached
+# API, which needs no allocator feature.
+chacha20poly1305 = { version = "0.10", default-features = false, optional = true }
 
 # Encoding — no_std compatible
 base64ct = { version = "1", default-features = false, features = ["alloc"] }
@@ -168,6 +169,11 @@ hqc = ["dep:oqs"]
 # `x25519-dalek`'s existing public API); no_std/alloc-compatible.
 kat = []
 
+# aead-wrap: KEM shared secret -> HKDF-SHA256 -> XChaCha20-Poly1305 or
+# ChaCha20-Poly1305, as seal/open functions and a public derive_aead_key.
+# Non-default and additive; no_std-compatible. See src/aead_wrap.rs.
+aead-wrap = ["dep:chacha20poly1305"]
+
 # CRA-1: this crate is deliberately rlib-only now (see [lib] crate-type
 # above and src/lib.rs) -- a pure Rust/no_std library meant to be imported
 # into other builds, never built standalone on its own. There is no more
@@ -241,6 +247,10 @@ required-features = ["kat"]
 [[test]]
 name = "hqc_tests"
 required-features = ["hqc"]
+
+[[test]]
+name = "aead_wrap_tests"
+required-features = ["aead-wrap"]
 
 # No `required-features` on the bench: a default `cargo bench` measures every
 # construction the crate ships by default -- ML-KEM and both hybrid profiles --

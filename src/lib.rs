@@ -88,6 +88,11 @@ pub mod fips203;
 /// via `liboqs`, native targets only (not WASM).
 pub mod hqc;
 
+/// KEM shared secret → HKDF-SHA256 → AEAD-sealed payload, in one path.
+/// Gated behind the non-default `aead-wrap` feature.
+#[cfg(feature = "aead-wrap")]
+pub mod aead_wrap;
+
 // ── Top-Level Re-exports ──────────────────────────────────────────────────────
 
 pub use error::{KemError, KemResult};

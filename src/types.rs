@@ -542,14 +542,14 @@ impl HybridProfile {
 
 // ── Serde Helpers ─────────────────────────────────────────────────────────────
 
-fn serialize_bytes_base64url<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+pub(crate) fn serialize_bytes_base64url<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     serializer.serialize_str(&Base64Url::encode_string(bytes))
 }
 
-fn deserialize_bytes_base64url<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+pub(crate) fn deserialize_bytes_base64url<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
