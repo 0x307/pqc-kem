@@ -20,7 +20,6 @@
 //!
 //! This whole file is a no-op when the `kat` feature is disabled.
 
-#![cfg(feature = "kat")]
 
 use pqc_kem::fips203::HybridKemKeypair;
 use serde::Deserialize;

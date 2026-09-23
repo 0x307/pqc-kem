@@ -10,7 +10,6 @@
 //! test` (without `--features kat`) still passes, since nothing here is
 //! compiled at all in that configuration.
 
-#![cfg(feature = "kat")]
 
 use pqc_kem::fips203::hybrid::x25519_kat;
 use serde::Deserialize;

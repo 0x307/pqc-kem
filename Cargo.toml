@@ -207,6 +207,35 @@ ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 
+# Feature-gated test targets are declared here with `required-features`
+# rather than gated by a `#![cfg(feature = ...)]` at the top of each file.
+#
+# The file-level form compiles to an empty binary when the feature is off,
+# and an empty test binary reports "ok. 0 passed" -- success, having checked
+# nothing. A default `cargo test` used to print five of those. With
+# `required-features`, cargo declines to build the target at all, so
+# nothing masquerades as a passing run, and asking for one explicitly
+# without its feature is an error rather than a silent no-op.
+[[test]]
+name = "kat_ml_kem"
+required-features = ["kat"]
+
+[[test]]
+name = "kat_x25519"
+required-features = ["kat"]
+
+[[test]]
+name = "kat_xwing"
+required-features = ["kat"]
+
+[[test]]
+name = "kat_hybrid_v1"
+required-features = ["kat"]
+
+[[test]]
+name = "hqc_tests"
+required-features = ["hqc"]
+
 # `panic = "abort"` matters when THIS crate is the one being built directly
 # (root package) -- e.g. `cargo test --no-default-features`: the test
 # harness binary is a genuine final linked artifact, and core's unwind

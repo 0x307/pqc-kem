@@ -10,7 +10,6 @@
 //! test` (without `--features kat`) still passes, since nothing here is
 //! compiled at all in that configuration.
 
-#![cfg(feature = "kat")]
 
 use pqc_kem::fips203::{MlKem1024Keypair, MlKem512Keypair, MlKem768Keypair};
 use pqc_kem::types::{KemAlgorithm, KemCiphertext, KemPublicKey};
