@@ -9,11 +9,12 @@ document for what counts as breaking inside `0.x`.
 
 ## [0.3.0] - Unreleased
 
-Work packages WP1–WP5 of the 0.3.0 work plan, plus pre-release hardening. WP1 addresses
+Work packages WP1–WP6 of the 0.3.0 work plan, plus pre-release hardening. WP1 addresses
 K-1 (broken `bike`/`mceliece` feature flags), K-3 (the `ntru` ghost module), and the
 unused-dependency findings; WP2 addresses A-Z1 (incomplete zeroization of secret key
 material); WP3 is CI and documentation coverage; WP4 adds Known-Answer Tests; WP5 names
-the hybrid construction as a versioned profile and adds X-Wing as its successor. This is
+the hybrid construction as a versioned profile and adds X-Wing as its successor; WP6 adds
+the `aead-wrap` sealed-box helper and brings the JavaScript bindings up to date. This is
 a breaking release per `STABILITY.md` §2 (removed public modules/features); see
 "Migration from 0.2.x" below.
 
@@ -374,8 +375,36 @@ Per `STABILITY.md` §2/§4, this is a breaking release:
   that gap by recomputing the first vector from scratch with the underlying primitives.
 - **Dependencies:** `sha3` and `digest`, for X-Wing's combiner and key expansion.
 
-Not yet in this release: X-Wing is not exposed through the `pqc-kem-wasm` JavaScript bundle.
-JavaScript consumers have profile v1 only until that lands (WP6).
+X-Wing is Rust-only in this release: the `pqc-kem-wasm` JavaScript bundle exposes profile v1.
+
+### Added (WP6 — `aead-wrap` sealed boxes and WASM parity)
+
+- **`aead-wrap` feature and `pqc_kem::aead_wrap` module** (non-default) — seal a payload to a
+  KEM public key: encapsulate, derive an AEAD key with HKDF-SHA256 under the label
+  `pqc-kem-aead-wrap-v1` (bound to the KEM algorithm and a caller-supplied `context`), and
+  encrypt with the KEM ciphertext bound into the AAD. `seal_hybrid` / `open_hybrid` for the v1
+  hybrid, `seal_ml_kem_768` / `open_ml_kem_768` for ML-KEM-768, `derive_aead_key` for protocols
+  that do their own framing, and the `SealedBox` wire type with JSON helpers.
+- **Two suites: XChaCha20-Poly1305 (default) and ChaCha20-Poly1305** (through
+  `seal_*_with_suite`). Nonces are always random and generated internally; no function takes
+  one. Each box records its suite.
+- **One error for every failed open.** Structural problems report `InvalidCiphertext`; a wrong
+  key, tampering, or a wrong context or AAD all return the same error, so a failure reveals
+  nothing about which check failed. The derived key and the opened plaintext zeroize on drop.
+- **`tests/aead_wrap_tests.rs`** (17 tests) and **`tests/vectors/aead_wrap_v1.json`** — five
+  derivation vectors computed by an independent RFC 5869 implementation, itself checked against
+  RFC 5869 test case 1. The tests cover round trips for both KEMs and both suites, every
+  tamper position, wrong context, AAD and key, a box relabelled as the other KEM, and
+  malformed boxes.
+- **WASM bindings:** `WasmHybridKemKeypair::{public_key_bytes, decapsulate_bytes, aead_open}`,
+  `WasmMlKem768Keypair::aead_open`, and free functions `hybrid_encapsulate_bytes`,
+  `hybrid_profile_id`, `aead_seal_hybrid` and `aead_seal_ml_kem_768`. JavaScript sealing is
+  XChaCha20-Poly1305 only; opening accepts either suite. `tests/wasm_api_test.mjs` covers the
+  new surface, and `wit/pqc-kem.wit` documents it.
+- **Dependencies:** `chacha20poly1305` 0.10, optional, behind `aead-wrap`, without its `alloc`
+  feature. The tracked `pqc-kem-wasm` lockfile gains it; nothing changes for default builds.
+- **CI:** new job `aead-wrap-feature-build-test` (std and no_std tests, a wasm32 build, clippy
+  and rustdoc with `-D warnings`).
 
 ### Changed (pre-release hardening)
 

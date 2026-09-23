@@ -383,3 +383,39 @@ jobs:
 
       - name: cargo test --no-default-features --features kat
         run: cargo test --no-default-features --features kat --locked --verbose
+
+  # WP6: the `aead-wrap` KEM -> AEAD helper (sealed boxes). Non-default and
+  # additive, so none of the jobs above compile it: this job is its only
+  # build, test, lint and rustdoc coverage, for both std and no_std, and it
+  # builds the no_std configuration for wasm32 since that is where the JS
+  # bindings run it. (pqc-kem-wasm enables the feature itself, so the
+  # wasm-pack job above exercises it through the JS API as well.)
+  aead-wrap-feature-build-test:
+    name: aead-wrap feature (build + test + clippy + rustdoc)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (fresh clone, no cache)
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (fresh, no cache, clippy + wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      - name: cargo test --features aead-wrap
+        run: cargo test --features aead-wrap --locked --verbose
+
+      - name: cargo test --no-default-features --features aead-wrap
+        run: cargo test --no-default-features --features aead-wrap --locked --verbose
+
+      - name: cargo build --target wasm32-unknown-unknown --no-default-features --features aead-wrap
+        run: cargo build --target wasm32-unknown-unknown --no-default-features --features aead-wrap --locked --verbose
+
+      - name: cargo clippy --features aead-wrap --all-targets -- -D warnings
+        run: cargo clippy --features aead-wrap --all-targets --locked -- -D warnings
+
+      - name: cargo doc --no-deps --features aead-wrap (-D warnings)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --features aead-wrap --locked

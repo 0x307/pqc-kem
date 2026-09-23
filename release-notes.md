@@ -3,8 +3,8 @@
 This release combines five work packages: **WP1** (feature-surface hygiene — K-1, K-3,
 unused dependencies), **WP2** (secret-material zeroization hardening — A-Z1), **WP3**
 (docs truthfulness, WASM target matrix, WIT header, CI coverage — X-3, X-5, K-2, A-D1),
-**WP4** (Known-Answer Tests — X-4) and **WP5** (named hybrid profiles and X-Wing — K-5),
-plus pre-release hardening. The X25519+ML-KEM-768 hybrid remains `PRIMARY_ALGORITHM`. Full
+**WP4** (Known-Answer Tests — X-4), **WP5** (named hybrid profiles and X-Wing — K-5) and
+**WP6** (`aead-wrap` sealed boxes and WASM parity), plus pre-release hardening. The X25519+ML-KEM-768 hybrid remains `PRIMARY_ALGORITHM`. Full
 details for every change are in [`CHANGELOG.md`](./CHANGELOG.md)'s `[0.3.0] - Unreleased`
 entry; this page is a reader-facing summary of it, not a separate source of truth.
 
@@ -47,8 +47,14 @@ entry; this page is a reader-facing summary of it, not a separate source of trut
   `PRIMARY_ALGORITHM`. X-Wing (`draft-connolly-cfrg-xwing-kem-10`) arrives as profile v2
   through a new `XWingKeypair`, checked against the three vectors published by the draft's
   authors and recommended for new deployments. Canonical byte encodings for the hybrid's
-  public key and ciphertext. Specification in `docs/hybrid-profiles.md`. X-Wing is not yet
-  exposed to JavaScript through `pqc-kem-wasm`.
+  public key and ciphertext. Specification in `docs/hybrid-profiles.md`. X-Wing is Rust-only
+  in this release.
+- **Added — sealed boxes (WP6):** a new non-default `aead-wrap` feature seals a payload to a
+  KEM public key (hybrid v1 or ML-KEM-768 → HKDF-SHA256 → XChaCha20-Poly1305 by default, or
+  ChaCha20-Poly1305). Nonces are internal, every failed open returns the same error, and the
+  key derivation is pinned by vectors from an independent RFC 5869 implementation. The
+  JavaScript bindings gain sealing and opening, plus the hybrid's canonical byte encodings.
+  `no_std`- and WASM-compatible. New CI job `aead-wrap-feature-build-test`.
 - **Added — benchmarks:** `benches/kem.rs` covers every construction the crate ships, and
   `scripts/bench-report.mjs` turns a criterion run into `BENCHMARKS.md`, with both hybrid
   profiles compared against ML-KEM-768 and against each other.
@@ -84,6 +90,9 @@ cargo test --features kat      # 137 tests + 3 doctests, 1 ignored. Adds tests/k
                                 # 6 RFC 7748 vectors), tests/kat_xwing.rs (1 test, 3 draft
                                 # vectors) and tests/kat_hybrid_v1.rs (2 tests); same counts
                                 # with --no-default-features (kat is no_std/alloc-compatible)
+cargo test --features aead-wrap   # 136 tests + 3 doctests. Adds tests/aead_wrap_tests.rs
+                                # (17 tests, including 5 derivation vectors); same count with
+                                # --no-default-features
 ```
 
 ### Migration from 0.2.x

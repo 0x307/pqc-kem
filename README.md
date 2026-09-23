@@ -45,10 +45,11 @@ ships `0.x`; breaking changes are governed by that document, not SemVer), the po
 - **BIKE, Classic McEliece, and NTRU are not part of this crate** — see the note under
   [Algorithm Support](#algorithm-support).
 
-**Roadmap (not yet implemented, do not assume present):** an `aead-wrap` KEM→AEAD helper
-(WP6). Known-answer test vectors and named, byte-encoded hybrid profiles, previously listed
-here as future work, ship in 0.3.0: see [`tests/vectors/README.md`](tests/vectors/README.md)
-and [`docs/hybrid-profiles.md`](docs/hybrid-profiles.md).
+Known-answer test vectors, named byte-encoded hybrid profiles and the `aead-wrap` KEM→AEAD
+helper, previously listed here as future work, ship in 0.3.0: see
+[`tests/vectors/README.md`](tests/vectors/README.md),
+[`docs/hybrid-profiles.md`](docs/hybrid-profiles.md) and
+[Sealed boxes](#sealed-boxes-aead-wrap-feature) below.
 
 ## Crate layout
 
@@ -341,6 +342,7 @@ await init();
 |--------------|---------|-----------------------------------------------------------------------------------------------|
 | `std`        | ✅ Yes  | Enables `std`-dependent trait impls (`sha2/std`, `serde/std`, `zeroize/std`, `ml-kem/getrandom`). Disable for `no_std` targets. |
 | `hqc`        | ❌ No   | Enables HQC-128/192/256 via `liboqs` (the `oqs` crate, C FFI). Not WASM-compatible. Requires a C toolchain, `cmake`, and `libclang` (for `bindgen`) — no OpenSSL required with this feature alone. |
+| `aead-wrap`  | ❌ No   | Adds [`aead_wrap`](src/aead_wrap.rs): seal a payload to a KEM public key (KEM → HKDF-SHA256 → XChaCha20-Poly1305 or ChaCha20-Poly1305). One new dependency, `chacha20poly1305`, without its `alloc` feature. `no_std`/`alloc`- and WASM-compatible. See [Sealed boxes](#sealed-boxes-aead-wrap-feature). |
 | `kat`        | ❌ No   | Adds a handful of deterministic, **testing/interop-only** entry points (`MlKem{512,768,1024}Keypair::from_seed_halves`/`encapsulate_deterministic`/`from_expanded_decapsulation_key_bytes`/`to_expanded_decapsulation_key_bytes`, `fips203::hybrid::x25519_kat`) used by `tests/kat_ml_kem.rs` and `tests/kat_x25519.rs` to check this crate against published Known-Answer-Test vectors. `no_std`/`alloc`-compatible; adds no new dependencies. **Never use these for production key generation or key exchange.** See [Known-Answer Tests](#known-answer-tests) below. |
 
 There is no `wasm` feature on `pqc-kem` itself — it builds for `wasm32-unknown-unknown` as an ordinary dependency, no feature flag needed (the required `getrandom` backend for that target is wired in automatically; see Cargo.toml). The `wasm-bindgen` JS/TS surface lives in the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate — see [Crate layout](#crate-layout).
@@ -414,6 +416,55 @@ The HKDF info string `"pqc-kem-hybrid-v1"` is a domain separator that binds the 
 
 ---
 
+### Sealed boxes (`aead-wrap` feature)
+
+A KEM gives you a 32-byte shared secret, not encrypted data. [`aead_wrap`](src/aead_wrap.rs)
+does the remaining step, so callers don't each write their own key derivation and nonce
+handling: seal a payload to a recipient's public key, and the recipient opens it with their
+keypair.
+
+```
+(kem_ct, ss) = Encapsulate(recipient_public_key)
+key          = HKDF-SHA256(ikm = ss, salt = none,
+                           info = "pqc-kem-aead-wrap-v1" ‖ 0x00 ‖ kem_algorithm ‖ 0x00 ‖ context)
+ciphertext   = AEAD(key, random nonce, plaintext, aad = kem_ct ‖ aad)
+```
+
+```rust
+use pqc_kem::aead_wrap::{open_hybrid, seal_hybrid};
+use pqc_kem::HybridKemKeypair;
+use rand::rngs::OsRng;
+
+let recipient = HybridKemKeypair::generate(&mut OsRng).unwrap();
+let sealed = seal_hybrid(&mut OsRng, &recipient.public_key(), b"my-protocol/v1", b"header", b"payload").unwrap();
+let plaintext = open_hybrid(&recipient, &sealed, b"my-protocol/v1", b"header").unwrap();
+assert_eq!(&plaintext[..], b"payload");
+```
+
+- **Suites.** XChaCha20-Poly1305 is the default (`seal_hybrid`, `seal_ml_kem_768`).
+  ChaCha20-Poly1305 is available through the `*_with_suite` functions for peers that need the
+  IETF 12-byte-nonce construction. Each box carries its suite, and opening accepts either.
+  Every box derives a fresh key from a fresh encapsulation, so a random nonce is safe for both
+  suites. No function takes a caller-chosen nonce.
+- **KEMs.** The X25519+ML-KEM-768 hybrid (profile v1) and ML-KEM-768.
+- **`context`** is domain separation: the same shared secret under two contexts gives two
+  unrelated keys. Use a fixed, protocol-specific string. Opening with a different context fails.
+- **`aad`** is authenticated but not encrypted. The KEM ciphertext is always bound in as well,
+  so a box's AEAD half cannot be moved onto another box's KEM half.
+- **Errors.** Malformed boxes (wrong lengths, wrong algorithm) fail with
+  `KemError::InvalidCiphertext`. Every failure after that, whether from a wrong key, tampering
+  or a wrong context or AAD, returns one identical error, so a failed open reveals nothing
+  about which check failed.
+- **Secrets.** The derived key (`AeadKey`) and the opened plaintext (`Zeroizing<Vec<u8>>`)
+  zeroize on drop.
+- **Wire format.** `SealedBox` serializes to JSON with base64url byte fields
+  (`SealedBox::to_json` / `from_json`), like the crate's other wire types.
+- **Derivation vectors.** `tests/vectors/aead_wrap_v1.json` pins `derive_aead_key` to values
+  computed by an independent RFC 5869 implementation. Changing the derivation means a new label
+  (`pqc-kem-aead-wrap-v2`), never new values under the old one.
+
+---
+
 ### HQC (NIST 2025 standard) — native only, `hqc` feature
 
 [`Hqc128Keypair`/`Hqc192Keypair`/`Hqc256Keypair`](src/hqc/mod.rs) share the same method shape as the ML-KEM types above. Implemented via `liboqs` (the `oqs` crate) — see "Why `liboqs` and not `pqcrypto-hqc`" under Security Considerations for the rationale, and the module-level docs in [`src/hqc/mod.rs`](src/hqc/mod.rs) for the full technical writeup.
@@ -461,6 +512,9 @@ All exports are in the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate (see [Crat
 | `x25519_public_bytes()` | `Uint8Array` | X25519 public key (32 bytes) |
 | `mlkem_public_bytes()` | `Uint8Array` | ML-KEM-768 public key (1184 bytes) |
 | `decapsulate(ciphertext_json: string)` | `Uint8Array` | Decapsulate a JSON ciphertext; returns 32-byte shared secret |
+| `public_key_bytes()` | `Uint8Array` | Public key in its canonical profile-v1 encoding, `x25519(32) ‖ mlkem(1184)` (1216 bytes) |
+| `decapsulate_bytes(ciphertext_bytes: Uint8Array)` | `Uint8Array` | Decapsulate a canonical profile-v1 ciphertext (1120 bytes); returns 32-byte shared secret |
+| `aead_open(sealed_json: string, context: Uint8Array, aad: Uint8Array)` | `Uint8Array` | Open a box from `aead_seal_hybrid`; returns the plaintext |
 
 #### `WasmMlKem{512,768,1024}Keypair` Methods
 
@@ -469,6 +523,7 @@ All exports are in the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate (see [Crat
 | `public_key_bytes()` | `Uint8Array` | Raw public key bytes |
 | `public_key_base64url()` | `string` | Public key as base64url string |
 | `decapsulate(ciphertext_bytes: Uint8Array)` | `Uint8Array` | Decapsulate raw ciphertext bytes; returns 32-byte shared secret |
+| `aead_open(sealed_json: string, context: Uint8Array, aad: Uint8Array)` | `Uint8Array` | **ML-KEM-768 only.** Open a box from `aead_seal_ml_kem_768`; returns the plaintext |
 
 #### Free Functions
 
@@ -478,8 +533,16 @@ All exports are in the sibling [`pqc-kem-wasm`](./pqc-kem-wasm) crate (see [Crat
 | `ml_kem_512_encapsulate` | `(recipient_public_key_bytes: Uint8Array) => string` | JSON `{"ciphertext": "<base64url>", "shared_secret": "<base64url>"}` | Encapsulate to ML-KEM-512 public key |
 | `ml_kem_768_encapsulate` | `(recipient_public_key_bytes: Uint8Array) => string` | JSON `{"ciphertext": "<base64url>", "shared_secret": "<base64url>"}` | Encapsulate to ML-KEM-768 public key |
 | `ml_kem_1024_encapsulate` | `(recipient_public_key_bytes: Uint8Array) => string` | JSON `{"ciphertext": "<base64url>", "shared_secret": "<base64url>"}` | Encapsulate to ML-KEM-1024 public key |
+| `hybrid_encapsulate_bytes` | `(recipient_public_key_bytes: Uint8Array) => string` | JSON `{"ciphertext_bytes": "<base64url>", "shared_secret": "<base64url>"}` | Encapsulate to a hybrid public key in its 1216-byte canonical encoding |
+| `hybrid_profile_id` | `() => string` | `"HybridKem-X25519-MLKEM768-v1"` | The hybrid construction's named profile |
+| `aead_seal_hybrid` | `(recipient_public_key_json: string, context: Uint8Array, aad: Uint8Array, plaintext: Uint8Array) => string` | JSON sealed box | Seal to a hybrid public key with XChaCha20-Poly1305 |
+| `aead_seal_ml_kem_768` | `(recipient_public_key_bytes: Uint8Array, context: Uint8Array, aad: Uint8Array, plaintext: Uint8Array) => string` | JSON sealed box | Seal to an ML-KEM-768 public key with XChaCha20-Poly1305 |
 | `pqc_kem_version` | `() => string` | `"0.3.0"` | Returns the crate version |
 | `primary_algorithm` | `() => string` | `"X25519+ML-KEM-768"` | Returns the primary algorithm identifier |
+
+Sealing from JavaScript is XChaCha20-Poly1305 only, so nonces are always generated inside the
+library. `aead_open` accepts either suite, so boxes sealed in Rust with ChaCha20-Poly1305 still
+open in JavaScript. X-Wing (profile v2) is Rust-only in 0.3.0.
 
 ---
 
@@ -788,7 +851,8 @@ cargo test
 `ml_kem_tests`, `types_tests`, and `zeroize_tests` (default features; re-verified for
 0.3.0 — see [CI](#continuous-integration) for the authoritative, up-to-date count). Add
 `--features hqc` (requires a C toolchain, `cmake`, and `libclang`) to
-additionally run `hqc_tests` (16 more tests).
+additionally run `hqc_tests` (16 more tests), and `--features aead-wrap` to run
+`aead_wrap_tests` (17 more tests).
 
 ### Build WASM `dist/`
 
@@ -830,7 +894,7 @@ wasm-pack build --target web --release --out-dir ../dist -- --no-default-feature
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request, on a fresh GitHub-hosted `ubuntu-latest` runner with no dependency or build caching — every run gets a genuinely clean checkout and toolchain install, not a machine with leftover local state. It needs nothing beyond what's listed above (no credentials, no pre-installed tools, no local files): just Rust via `rustup`, installed fresh by [`dtolnay/rust-toolchain`](https://github.com/dtolnay/rust-toolchain).
 
-Eleven jobs (four added in 0.3.0's WP3 pass — `no-std-build`, `clippy-and-doc`,
+Thirteen jobs (four added in 0.3.0's WP3 pass — `no-std-build`, `clippy-and-doc`,
 `wasm-targets`, `wasm-pack-node-test` — closing the X-3 gap that previously left the
 `no_std` claim, lint/doc hygiene, and the WASM JS API test unenforced by CI):
 
@@ -839,12 +903,14 @@ Eleven jobs (four added in 0.3.0's WP3 pass — `no-std-build`, `clippy-and-doc`
 - **`pqc-kem-wasm` (wasm32 cdylib artifact)** — builds the actual advertised standalone WASM artifact (the sibling `pqc-kem-wasm` crate; see [Crate layout](#crate-layout)) for `wasm32-unknown-unknown`. This is the exact invocation `build.ps1`/`build-wasm.ps1` run, minus wasm-pack's JS/TS glue generation.
 - **Downstream consumer (no_std + external std leak, wasm32)** — builds `tests/downstream-consumer-fixture/`, a minimal separate crate that depends on `pqc-kem` as an ordinary no_std library while independently linking `std` via an unrelated dependency, targeting `wasm32-unknown-unknown`. This is the actual regression test for `CRA-1` — the defect it catches (a library crate wrongly claiming process-wide lang items) is only observable from a consumer's build graph, never from building `pqc-kem` on its own.
 - **`hqc` feature (build + test)** — `cargo build`/`cargo test --features hqc`, on a runner with a C toolchain, `cmake`, and `libclang` available (verified not to additionally need OpenSSL for `hqc` alone). This is real, working functionality now, not a stub — must always pass. Also runs `cargo doc --no-deps --features hqc` with `-D warnings` (the only runner in this workflow that can build the `hqc`-gated doc items at all).
-- **`--all-features` (build + test)** — `cargo build --all-features && cargo test --all-features` must pass. As of 0.3.0 the only feature `--all-features` enables beyond the default is `hqc`; the non-functional `bike`/`mceliece` stubs that previously made this job an expected-failure check were removed entirely (see `CHANGELOG.md`'s 0.3.0 entry).
+- **`--all-features` (build + test)** — `cargo build --all-features && cargo test --all-features` must pass. As of 0.3.0 `--all-features` adds `hqc`, `kat` and `aead-wrap` to the default; the non-functional `bike`/`mceliece` stubs that previously made this job an expected-failure check were removed entirely (see `CHANGELOG.md`'s 0.3.0 entry).
 - **Packaged artifact (`cargo package` build + test)** — builds and tests the actual packaged `.crate` output (what a `cargo add` consumer gets), not the live working tree, catching cases where `.gitignore`/package-exclude rules would ship something broken or incomplete. (`pqc-kem-wasm/` and `tests/downstream-consumer-fixture/` are separate Cargo packages with their own `Cargo.toml`, so `cargo package` never pulls them into `pqc-kem`'s own published `.crate` — verified via `cargo package --list`.)
 - **`no_std` build + test (`--no-default-features`)** *(new, WP3/X-3)* — `cargo build`/`cargo test --no-default-features`. Previously this claim was only checked locally via `verify-gates.ps1`; it's now enforced on every push/PR.
 - **`clippy + rustdoc` (-D warnings, default features)** *(new, WP3/X-3, A-D1)* — `cargo clippy --all-targets -- -D warnings`, then `cargo doc --no-deps` with `RUSTDOCFLAGS="-D warnings"`. Catches both lint regressions and broken intra-doc links (the 9 warnings fixed in this work package — see `CHANGELOG.md`'s 0.3.0 entry) before they ship.
 - **WASM target matrix (`wasm32-unknown-unknown` + `wasm32-wasip1`)** *(new, WP3/X-3)* — builds the root `pqc-kem` crate and the sibling `pqc-kem-wasm` crate for `wasm32-unknown-unknown` (`--no-default-features`), then additionally builds the root crate for `wasm32-wasip1` (`--no-default-features`). `wasm32-wasip2` is verified locally (see [Per-target support matrix](#per-target-support-matrix)) but not yet added to this job.
 - **`wasm-pack` + `node` (WASM API regression test)** *(new, WP3/X-3, A-D1)* — installs `wasm-pack` and Node LTS, runs the same `wasm-pack build` invocation `build.ps1` runs (translated to bash) from `pqc-kem-wasm/`, then runs `node tests/wasm_api_test.mjs` against the freshly built `dist/`. This is the first CI coverage this test has ever had; previously it could only be run manually, which is how its version-string assertion went stale (A-D1).
+- **`kat` feature (build + test)** *(WP4)* — `cargo build`/`cargo test --features kat`, with and without default features, running the Known-Answer Tests against the vendored vectors.
+- **`aead-wrap` feature (build + test + clippy + rustdoc)** *(WP6)* — tests the sealed-box helper with and without default features, builds its `no_std` configuration for `wasm32-unknown-unknown`, and runs clippy and rustdoc with `-D warnings` on it. It is the only job that compiles `aead-wrap` directly, since the feature is off by default.
 
 ---
 
