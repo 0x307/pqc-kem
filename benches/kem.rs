@@ -28,7 +28,7 @@
 //! performance table becomes a lie.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use rand::rngs::OsRng;
+use rand::{rngs::StdRng, SeedableRng};
 
 use pqc_kem::{HybridKemKeypair, MlKem1024Keypair, MlKem512Keypair, MlKem768Keypair, XWingKeypair};
 
@@ -83,6 +83,26 @@ fn write_run_manifest() {
     }
 }
 
+/// The RNG every benchmark here draws from: a seeded in-process generator,
+/// not the operating system's entropy source.
+///
+/// pqc-kem never picks its own randomness -- every key generation and
+/// encapsulation takes a caller-supplied `CryptoRng`. So the crate's cost is
+/// the lattice and curve work, and the entropy source is the caller's. With
+/// `OsRng` inside the timed loop, every iteration also paid for a trip to the
+/// kernel's entropy pool, and that part varied with the host: on two
+/// separate dedicated-core instances, 10 of the 11 benchmarks that drifted
+/// more than 5% between passes were keygen or encapsulate, the operations
+/// that call the RNG, while decapsulate, which does not, held.
+///
+/// The generator advances with every call, so each iteration still works on
+/// fresh key material; only the source changes. `StdRng` is not guaranteed to
+/// produce the same stream across `rand` versions, which does not matter here:
+/// nothing depends on the specific bytes, only on not calling the kernel.
+fn seeded_rng() -> StdRng {
+    StdRng::seed_from_u64(0x0307_4b45_4d00)
+}
+
 /// ML-KEM, FIPS 203.
 ///
 /// Unlike ML-DSA signing, encapsulation and decapsulation have no rejection
@@ -105,19 +125,20 @@ fn ml_kem(c: &mut Criterion) {
     macro_rules! bench_ml_kem {
         ($name:literal, $kp:ty) => {{
             let mut group = c.benchmark_group($name);
+            let mut rng = seeded_rng();
 
             group.bench_function("keygen", |b| {
-                b.iter(|| <$kp>::generate(&mut OsRng).expect("keygen"))
+                b.iter(|| <$kp>::generate(&mut rng).expect("keygen"))
             });
 
-            let kp = <$kp>::generate(&mut OsRng).expect("keygen");
+            let kp = <$kp>::generate(&mut rng).expect("keygen");
             let pk = kp.public_key();
 
             group.bench_function("encapsulate", |b| {
-                b.iter(|| <$kp>::encapsulate(&mut OsRng, &pk).expect("encapsulate"))
+                b.iter(|| <$kp>::encapsulate(&mut rng, &pk).expect("encapsulate"))
             });
 
-            let (ct, _) = <$kp>::encapsulate(&mut OsRng, &pk).expect("encapsulate");
+            let (ct, _) = <$kp>::encapsulate(&mut rng, &pk).expect("encapsulate");
             group.bench_function("decapsulate", |b| {
                 b.iter(|| kp.decapsulate(&ct).expect("decapsulate"))
             });
@@ -139,20 +160,21 @@ fn ml_kem(c: &mut Criterion) {
 /// a recorded session being decrypted later if ML-KEM ever falls.
 fn hybrid_v1(c: &mut Criterion) {
     let mut group = c.benchmark_group("hybrid-v1-x25519-ml-kem-768");
+    let mut rng = seeded_rng();
 
     group.bench_function("keygen", |b| {
-        b.iter(|| HybridKemKeypair::generate(&mut OsRng).expect("keygen"))
+        b.iter(|| HybridKemKeypair::generate(&mut rng).expect("keygen"))
     });
 
-    let kp = HybridKemKeypair::generate(&mut OsRng).expect("keygen");
+    let kp = HybridKemKeypair::generate(&mut rng).expect("keygen");
     let x_pub = kp.x25519_public_bytes();
     let m_pub = kp.mlkem_public_bytes();
 
     group.bench_function("encapsulate", |b| {
-        b.iter(|| HybridKemKeypair::encapsulate(&mut OsRng, &x_pub, &m_pub).expect("encapsulate"))
+        b.iter(|| HybridKemKeypair::encapsulate(&mut rng, &x_pub, &m_pub).expect("encapsulate"))
     });
 
-    let (ct, _) = HybridKemKeypair::encapsulate(&mut OsRng, &x_pub, &m_pub).expect("encapsulate");
+    let (ct, _) = HybridKemKeypair::encapsulate(&mut rng, &x_pub, &m_pub).expect("encapsulate");
     group.bench_function("decapsulate", |b| {
         b.iter(|| kp.decapsulate(&ct).expect("decapsulate"))
     });
@@ -171,19 +193,20 @@ fn hybrid_v1(c: &mut Criterion) {
 /// between them actually pays.
 fn hybrid_v2_xwing(c: &mut Criterion) {
     let mut group = c.benchmark_group("hybrid-v2-xwing");
+    let mut rng = seeded_rng();
 
     group.bench_function("keygen", |b| {
-        b.iter(|| XWingKeypair::generate(&mut OsRng).expect("keygen"))
+        b.iter(|| XWingKeypair::generate(&mut rng).expect("keygen"))
     });
 
-    let kp = XWingKeypair::generate(&mut OsRng).expect("keygen");
+    let kp = XWingKeypair::generate(&mut rng).expect("keygen");
     let pk = kp.public_key();
 
     group.bench_function("encapsulate", |b| {
-        b.iter(|| XWingKeypair::encapsulate(&mut OsRng, &pk).expect("encapsulate"))
+        b.iter(|| XWingKeypair::encapsulate(&mut rng, &pk).expect("encapsulate"))
     });
 
-    let (ct, _) = XWingKeypair::encapsulate(&mut OsRng, &pk).expect("encapsulate");
+    let (ct, _) = XWingKeypair::encapsulate(&mut rng, &pk).expect("encapsulate");
     group.bench_function("decapsulate", |b| {
         b.iter(|| kp.decapsulate(&ct).expect("decapsulate"))
     });
@@ -199,15 +222,16 @@ fn hqc(c: &mut Criterion) {
     use pqc_kem::hqc::Hqc128Keypair;
 
     let mut group = c.benchmark_group("hqc-128");
+    let mut rng = seeded_rng();
     group.bench_function("keygen", |b| {
-        b.iter(|| Hqc128Keypair::generate(&mut OsRng).expect("keygen"))
+        b.iter(|| Hqc128Keypair::generate(&mut rng).expect("keygen"))
     });
-    let kp = Hqc128Keypair::generate(&mut OsRng).expect("keygen");
+    let kp = Hqc128Keypair::generate(&mut rng).expect("keygen");
     let pk = kp.public_key();
     group.bench_function("encapsulate", |b| {
-        b.iter(|| Hqc128Keypair::encapsulate(&mut OsRng, &pk).expect("encapsulate"))
+        b.iter(|| Hqc128Keypair::encapsulate(&mut rng, &pk).expect("encapsulate"))
     });
-    let (ct, _) = Hqc128Keypair::encapsulate(&mut OsRng, &pk).expect("encapsulate");
+    let (ct, _) = Hqc128Keypair::encapsulate(&mut rng, &pk).expect("encapsulate");
     group.bench_function("decapsulate", |b| {
         b.iter(|| kp.decapsulate(&ct).expect("decapsulate"))
     });

@@ -438,6 +438,11 @@ ${hasHqc ? "" : "- **HQC.** Not measured in this run; rebuild with `--features h
   crate docs; they are not timings and do not belong in this table.
 - **WASM.** Every figure here is native. HQC does not build for
   \`wasm32-unknown-unknown\` at all; ML-KEM and both hybrid profiles do.
+- **The caller's entropy source.** Key generation and encapsulation draw from a
+  seeded in-process RNG, not the operating system's. pqc-kem takes its randomness
+  from the caller, so what it costs a caller to *produce* that randomness depends
+  on the caller's platform, not on this crate, and measuring it here mixed host
+  noise into the crate's figures.
 - **Constant-time behaviour.** A median and a confidence interval say nothing
   about whether timing varies with secret data. That needs a different tool
   and a different claim.
