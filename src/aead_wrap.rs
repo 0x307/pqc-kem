@@ -140,6 +140,19 @@ pub struct SealedBox {
     pub ciphertext: Vec<u8>,
 }
 
+impl SealedBox {
+    /// Serialize to a JSON string, as the crate's other wire types do.
+    pub fn to_json(&self) -> KemResult<alloc::string::String> {
+        serde_json::to_string(self).map_err(|e| KemError::Serialization(alloc::string::ToString::to_string(&e)))
+    }
+
+    /// Deserialize from a JSON string. This checks shape only: lengths and
+    /// algorithm are checked when the box is opened.
+    pub fn from_json(s: &str) -> KemResult<Self> {
+        serde_json::from_str(s).map_err(|e| KemError::Serialization(alloc::string::ToString::to_string(&e)))
+    }
+}
+
 /// Derive the AEAD key for a KEM shared secret.
 ///
 /// `HKDF-SHA256(ikm = ss, salt = none, info = AEAD_WRAP_INFO_V1 ‖ 0x00 ‖

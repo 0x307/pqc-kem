@@ -61,6 +61,10 @@ const {
   ml_kem_1024_encapsulate,
   pqc_kem_version,
   primary_algorithm,
+  hybrid_encapsulate_bytes,
+  hybrid_profile_id,
+  aead_seal_hybrid,
+  aead_seal_ml_kem_768,
 } = await import(pathToFileURL(join(distDir, 'pqc_kem.js')).href);
 
 // ── Initialize WASM synchronously from file bytes ────────────────────────────
@@ -302,6 +306,79 @@ runTest('shared secret Uint8Array can be zeroed with fill(0)', () => {
   ss.fill(0);
   assert(ss.every(b => b === 0), 'all bytes must be 0 after fill(0)');
   keypair.free();
+});
+
+// =============================================================================
+// TEST 9 — Hybrid profile v1 canonical byte encoding (WP5)
+// =============================================================================
+console.log('\nTest 9 — Hybrid canonical byte encoding:');
+const b64u = (bytes) => Buffer.from(bytes).toString('base64url');
+const eqBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+runTest('hybrid public_key_bytes() is the 1216-byte canonical encoding', () => {
+  const kp = new WasmHybridKemKeypair();
+  assertEqual(kp.public_key_bytes().length, 1216, 'public_key_bytes length');
+  kp.free();
+});
+
+runTest('hybrid_encapsulate_bytes + decapsulate_bytes agree on the secret', () => {
+  const kp = new WasmHybridKemKeypair();
+  const r = JSON.parse(hybrid_encapsulate_bytes(kp.public_key_bytes()));
+  const ct = base64urlDecode(r.ciphertext_bytes);
+  const ss = base64urlDecode(r.shared_secret);
+  assertEqual(ct.length, 1120, 'canonical ciphertext length');
+  assertEqual(ss.length, 32, 'shared secret length');
+  assert(eqBytes(kp.decapsulate_bytes(ct), ss), 'decapsulate_bytes must recover the same secret');
+  kp.free();
+});
+
+runTest('hybrid_profile_id() names profile v1', () => {
+  assertEqual(hybrid_profile_id(), 'HybridKem-X25519-MLKEM768-v1', 'hybrid_profile_id()');
+});
+
+// =============================================================================
+// TEST 10 — aead-wrap: seal to a public key, open with the keypair (WP6)
+// =============================================================================
+console.log('\nTest 10 — aead-wrap:');
+const enc = (t) => new TextEncoder().encode(t);
+const CTX = enc('test-protocol-v1');
+const AAD = enc('header: v1');
+const MSG = enc('a payload only the recipient can read');
+
+runTest('hybrid seal/open round-trips, sealed with XChaCha20-Poly1305', () => {
+  const kp = new WasmHybridKemKeypair();
+  const sealed = aead_seal_hybrid(kp.public_key_json(), CTX, AAD, MSG);
+  assertEqual(JSON.parse(sealed).suite, 'xchacha20-poly1305', 'suite on the wire');
+  assert(eqBytes(kp.aead_open(sealed, CTX, AAD), MSG), 'opened plaintext must match');
+  kp.free();
+});
+
+runTest('ML-KEM-768 seal/open round-trips', () => {
+  const kp = new WasmMlKem768Keypair();
+  const sealed = aead_seal_ml_kem_768(kp.public_key_bytes(), CTX, AAD, MSG);
+  assert(eqBytes(kp.aead_open(sealed, CTX, AAD), MSG), 'opened plaintext must match');
+  kp.free();
+});
+
+runTest('a tampered sealed box refuses to open', () => {
+  const kp = new WasmHybridKemKeypair();
+  const box = JSON.parse(aead_seal_hybrid(kp.public_key_json(), CTX, AAD, MSG));
+  const body = base64urlDecode(box.ciphertext);
+  body[0] ^= 1;
+  box.ciphertext = b64u(body);
+  let threw = false;
+  try { kp.aead_open(JSON.stringify(box), CTX, AAD); } catch { threw = true; }
+  assert(threw, 'opening a tampered box must throw');
+  kp.free();
+});
+
+runTest('the wrong context refuses to open', () => {
+  const kp = new WasmMlKem768Keypair();
+  const sealed = aead_seal_ml_kem_768(kp.public_key_bytes(), CTX, AAD, MSG);
+  let threw = false;
+  try { kp.aead_open(sealed, enc('other-protocol-v1'), AAD); } catch { threw = true; }
+  assert(threw, 'a different context must not open the box');
+  kp.free();
 });
 
 // =============================================================================

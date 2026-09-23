@@ -30,7 +30,9 @@ name       = "pqc_kem"
 crate-type = ["cdylib"]
 
 [dependencies]
-pqc-kem = { path = "..", default-features = false }
+# `aead-wrap` for aead_seal_* / aead_open (WP6). Additive: the JS surface
+# seals with XChaCha20-Poly1305 only, so nonce handling stays inside.
+pqc-kem = { path = "..", default-features = false, features = ["aead-wrap"] }
 
 # `default-features = false`: wasm-bindgen's default `std` feature would
 # link real `std` into this artifact, colliding with the `#[panic_handler]`/

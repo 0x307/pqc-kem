@@ -88,6 +88,20 @@
 //   /// Throws a JavaScript Error if the ciphertext is malformed or mismatched.
 //   decapsulate: func(ciphertext_json: string) -> result<Uint8Array, error>;  // 32 bytes
 //
+//   /// The public key in its canonical profile-v1 byte encoding:
+//   /// x25519_pk(32) ‖ mlkem_ek(1184). Pass to hybrid_encapsulate_bytes().
+//   public_key_bytes: func() -> result<Uint8Array, error>;  // 1216 bytes
+//
+//   /// Decapsulate a canonical profile-v1 ciphertext,
+//   /// x25519_eph_pk(32) ‖ mlkem_ct(1088), from hybrid_encapsulate_bytes().
+//   decapsulate_bytes: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Open a sealed box produced by aead_seal_hybrid(). `context` and `aad`
+//   /// must match what the sealer used. Every failure after the structural
+//   /// checks throws the same error: wrong key, tampering and a wrong
+//   /// context are indistinguishable by design.
+//   aead_open: func(sealed_json: string, context: Uint8Array, aad: Uint8Array) -> result<Uint8Array, error>;
+//
 //   /// Zeroizes secret key material in WASM memory.
 //   /// Called automatically via [Symbol.dispose]() in environments that support
 //   /// the TC39 Explicit Resource Management proposal (`using` keyword).
@@ -148,6 +162,10 @@
 //   ///
 //   /// Throws a JavaScript Error if the ciphertext is invalid or mismatched.
 //   decapsulate: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Open a sealed box produced by aead_seal_ml_kem_768(). `context` and
+//   /// `aad` must match what the sealer used; failures are indistinguishable.
+//   aead_open: func(sealed_json: string, context: Uint8Array, aad: Uint8Array) -> result<Uint8Array, error>;
 //
 //   /// Zeroizes secret key material. Also called via [Symbol.dispose]().
 //   free: func();
@@ -293,6 +311,35 @@
 // Returns the primary algorithm identifier string (e.g. "X25519+ML-KEM-768").
 //
 // primary_algorithm: func() -> string;
+
+// -----------------------------------------------------------------------------
+// hybrid_encapsulate_bytes / hybrid_profile_id  (profile v1 byte encoding)
+// -----------------------------------------------------------------------------
+//
+// Encapsulate to a hybrid public key given as canonical bytes (1216, from
+// WasmHybridKemKeypair.public_key_bytes()). Returns a JSON string:
+//   { "ciphertext_bytes": "<base64url, 1120 bytes>",
+//     "shared_secret":    "<base64url, 32 bytes>" }   // KEEP SECRET
+//
+// hybrid_encapsulate_bytes: func(recipient_public_key_bytes: Uint8Array) -> result<string, error>;
+//
+// The named profile identifier, "HybridKem-X25519-MLKEM768-v1".
+//
+// hybrid_profile_id: func() -> string;
+
+// -----------------------------------------------------------------------------
+// aead_seal_hybrid / aead_seal_ml_kem_768  (aead-wrap)
+// -----------------------------------------------------------------------------
+//
+// Seal a payload to a KEM public key: KEM shared secret -> HKDF-SHA256 ->
+// XChaCha20-Poly1305. XChaCha20-Poly1305 is the only suite offered from
+// JavaScript, so nonces are generated inside the library and never become
+// the caller's problem. `context` separates protocols; `aad` is
+// authenticated but not encrypted. Both must be passed again to open.
+// Returns the sealed box as a JSON string.
+//
+// aead_seal_hybrid: func(recipient_public_key_json: string, context: Uint8Array, aad: Uint8Array, plaintext: Uint8Array) -> result<string, error>;
+// aead_seal_ml_kem_768: func(recipient_public_key_bytes: Uint8Array, context: Uint8Array, aad: Uint8Array, plaintext: Uint8Array) -> result<string, error>;
 
 // =============================================================================
 // ALGORITHM PARAMETER REFERENCE
