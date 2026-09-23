@@ -22,21 +22,25 @@ const __dirname  = dirname(__filename);
 const distDir    = join(__dirname, '..', 'dist');
 const wasmPath   = join(distDir, 'pqc_kem_bg.wasm');
 
-// ── Expected version, read from pqc-kem-wasm/Cargo.toml at run time ─────────
+// ── Expected version, read from pqc-kem's Cargo.toml at run time ───────────
 // Avoids a second hardcoded literal drifting out of sync with the crate
-// version the way the old literal "0.1.0" did (A-D1). Falls back to a
-// hardcoded string only if the manifest can't be read/parsed.
+// version the way the old literal "0.1.0" did (A-D1).
+//
+// Reads the *pqc-kem* manifest, not pqc-kem-wasm's. `pqc_kem_version()`
+// returns `pqc_kem::VERSION`, which is `env!("CARGO_PKG_VERSION")` evaluated
+// inside pqc-kem, so that is the version it must be compared against. The
+// two manifests agree today only because both were bumped together; the wasm
+// crate is `publish = false` and is free to lag, and comparing against it
+// would then fail for the wrong reason or pass while checking nothing.
+//
+// No hardcoded fallback: if the manifest can't be read, the test must fail
+// rather than quietly compare against a literal nobody updates.
 function readExpectedVersion() {
-  const manifestPath = join(__dirname, '..', 'pqc-kem-wasm', 'Cargo.toml');
-  try {
-    const manifest = readFileSync(manifestPath, 'utf8');
-    const match = manifest.match(/^version\s*=\s*"([^"]+)"/m);
-    if (match) return match[1];
-  } catch {
-    // fall through to the hardcoded fallback below
-  }
-  // Fallback (keep in sync with pqc-kem-wasm/Cargo.toml if this ever triggers):
-  return '0.3.0';
+  const manifestPath = join(__dirname, '..', 'Cargo.toml');
+  const manifest = readFileSync(manifestPath, 'utf8');
+  const match = manifest.match(/^version\s*=\s*"([^"]+)"/m);
+  if (!match) throw new Error(`no version line found in ${manifestPath}`);
+  return match[1];
 }
 const expectedVersion = readExpectedVersion();
 
@@ -253,7 +257,7 @@ runTest('sender and recipient shared secrets are byte-for-byte identical', () =>
 // TEST 6 — Version and algorithm strings
 // =============================================================================
 console.log('\nTest 6 — Version and algorithm strings:');
-runTest(`pqc_kem_version() returns "${expectedVersion}" (read from pqc-kem-wasm/Cargo.toml)`, () => {
+runTest(`pqc_kem_version() returns "${expectedVersion}" (read from pqc-kem's Cargo.toml)`, () => {
   const v = pqc_kem_version();
   assertEqual(v, expectedVersion, 'pqc_kem_version()');
 });
