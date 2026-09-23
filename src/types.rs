@@ -338,7 +338,7 @@ impl HybridKemCiphertext {
     /// `x25519_eph_pk(32) ‖ mlkem_ct(1088)` = 1120 bytes. See
     /// `docs/hybrid-profiles.md`. This is additive — the JSON wire format
     /// above (`classical_ct`/`pqc_ct`/`algorithm`) is unchanged and remains
-    /// the compatibility-critical shape SAGP consumes.
+    /// the compatibility-critical shape existing deployments consume.
     pub const BYTES: usize = 1120;
 
     /// Encode this ciphertext as the canonical 1120-byte v1 profile layout.
@@ -500,7 +500,7 @@ impl HybridPublicKey {
 ///   **Recommended for new deployments.**
 ///
 /// `PRIMARY_ALGORITHM`/`HYBRID_PROFILE_ID` still point at v1 for wire
-/// compatibility with existing SAGP deployments; this may change in a
+/// compatibility with existing deployments; this may change in a
 /// future major/minor version once v2 has had time to see adoption.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HybridProfile {

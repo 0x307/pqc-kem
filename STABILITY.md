@@ -126,8 +126,7 @@ compatibility is broken. The two `HybridKemKeypair` accessors above are ordinary
 
 ## 9. Testing-only APIs — no stability guarantee
 
-The non-default `kat` Cargo feature (added 0.3.0; see `docs/gap-analysis/pqc-kem-gap-roadmap.md`
-§3.7, X-4/P1) gates a small set of items that exist solely to check this crate against published
+The non-default `kat` Cargo feature (added 0.3.0; see `tests/vectors/README.md`) gates a small set of items that exist solely to check this crate against published
 Known-Answer-Test vectors:
 
 - `MlKem512Keypair`/`MlKem768Keypair`/`MlKem1024Keypair`: `from_seed_halves`,

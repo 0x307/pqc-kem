@@ -45,11 +45,10 @@ ships `0.x`; breaking changes are governed by that document, not SemVer), the po
 - **BIKE, Classic McEliece, and NTRU are not part of this crate** — see the note under
   [Algorithm Support](#algorithm-support).
 
-**Roadmap (not yet implemented, do not assume present):** known-answer test vectors, a
-canonical byte-encoding for the hybrid construction, and an `aead-wrap` KEM→AEAD helper are
-tracked as future work in
-[`docs/gap-analysis/pqc-kem-gap-roadmap.md`](docs/gap-analysis/pqc-kem-gap-roadmap.md) (work
-packages WP4–WP6). Nothing in this README describes those as shipped.
+**Roadmap (not yet implemented, do not assume present):** an `aead-wrap` KEM→AEAD helper
+(WP6). Known-answer test vectors and named, byte-encoded hybrid profiles, previously listed
+here as future work, ship in 0.3.0: see [`tests/vectors/README.md`](tests/vectors/README.md)
+and [`docs/hybrid-profiles.md`](docs/hybrid-profiles.md).
 
 ## Crate layout
 

@@ -9,8 +9,8 @@ document for what counts as breaking inside `0.x`.
 
 ## [0.3.0] - Unreleased
 
-WP1 ("Feature-surface hygiene") and WP2 ("Secret-material hardening") of the SAGP
-gap-analysis roadmap (`docs/gap-analysis/pqc-kem-gap-roadmap.md`) — WP1 addresses K-1
+WP1 ("Feature-surface hygiene") and WP2 ("Secret-material hardening") of the 0.3.0
+work plan — WP1 addresses K-1
 (broken `bike`/`mceliece` feature flags), K-3 (the `ntru` ghost module), and the
 unused-dependency findings; WP2 addresses A-Z1 (incomplete zeroization of secret key
 material). This is a breaking release per `STABILITY.md` §2 (removed public
@@ -113,7 +113,7 @@ modules/features); see "Migration from 0.2.x" below.
   operations ever implemented — its one-minor-version deprecation floor
   (`STABILITY.md` §3) was satisfied well before 0.3.0. NTRU was eliminated from NIST
   post-quantum standardization; use `fips203::MlKem768Keypair` instead. This is the *one*
-  CHANGELOG mention of NTRU per the gap-analysis roadmap's K-3 spec.
+  CHANGELOG mention of NTRU, by design.
 - **Unused dependencies removed:** `aes-gcm`, `sha3`, `hex`, `subtle`. None were referenced
   anywhere in `src/` (verified by repo-wide search before removal). `chacha20poly1305`
   is *not* removed — it stays a non-optional dependency for now and will move behind a
@@ -221,7 +221,7 @@ Per `STABILITY.md` §2/§4, this is a breaking release:
   existing CI job cited per cell) across `native (std)`, `native no_std+alloc`,
   `wasm32-unknown-unknown` (both the root crate and the `pqc-kem-wasm` cdylib surface),
   `wasm32-wasip1`, and `wasm32-wasip2`, for ML-KEM-512/768/1024, the hybrid construction, HQC,
-  serde/JSON, and zeroization (X-3, mirrors the family-suite FS-04 four-column matrix shape).
+  serde/JSON, and zeroization (X-3).
 - **README.md "Audit and FIPS status"** — states plainly that this crate has not been
   independently audited and carries no CMVP/FIPS 140-3 validation; that `ml-kem` (RustCrypto,
   `0.3.2`) implements FIPS 203 but is not itself CMVP-validated; that `x25519-dalek` (`2.0.1`)
@@ -268,9 +268,6 @@ Per `STABILITY.md` §2/§4, this is a breaking release:
   [`wit/pqc-kem.wit`](wit/pqc-kem.wit) is a descriptive interface contract for the
   `wasm-bindgen` JS API, not a buildable Component Model interface, and that no WASM
   Component is produced anywhere in this repo.
-- **`docs/gap-analysis/SAGP-Primitive-Gap-Analysis_rev-A.txt`** — deleted. This was an empty
-  placeholder; the `.md` twin in the same directory holds the actual extracted gap-analysis
-  text and is the one referenced from `docs/gap-analysis/pqc-kem-gap-roadmap.md`.
 
 ### Docs (WP3 — X-3/A-D1)
 

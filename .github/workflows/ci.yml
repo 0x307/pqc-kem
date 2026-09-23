@@ -354,7 +354,7 @@ jobs:
 
   # WP4 (X-4/P1): Known-Answer Tests against published NIST ACVP ML-KEM
   # vectors and RFC 7748 X25519 vectors (see
-  # docs/gap-analysis/pqc-kem-gap-roadmap.md §3.7 and tests/vectors/README.md
+  # tests/vectors/README.md
   # for provenance). The `kat` feature is non-default and additive -- gates
   # a handful of deterministic, testing-only entry points
   # (MlKem*Keypair::from_seed_halves/encapsulate_deterministic/

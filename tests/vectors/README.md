@@ -2,8 +2,7 @@
 
 This directory ships with the `pqc-kem` crate package (see the `include`
 list in [`Cargo.toml`](../../Cargo.toml)) so downstream integrators can reuse
-the same vectors this crate tests against (FAB-001 I-3: "one test-vector
-file shared across sig/kem/core"). All files are plain JSON with lowercase
+the same vectors this crate tests against. All files are plain JSON with lowercase
 hex strings (no `0x` prefix) — no binary blobs, no compression.
 
 These vectors are exercised by `tests/kat_ml_kem.rs`, `tests/kat_x25519.rs`,
@@ -125,8 +124,7 @@ independent copies agreed exactly, byte for byte.
 
 **Mapping to crate API:** this crate deliberately has **no general-purpose
 public X25519 API** (X25519 is only ever used internally, as half of
-[`HybridKemKeypair`](../../src/fips203/hybrid.rs)'s combiner) — see the
-task constraints and `docs/gap-analysis/pqc-kem-gap-roadmap.md` §3.7. The
+[`HybridKemKeypair`](../../src/fips203/hybrid.rs)'s combiner), by design. The
 `kat` feature therefore adds one narrow free function purely for this test,
 `pqc_kem::fips203::hybrid::x25519_kat(scalar: [u8; 32], u: [u8; 32]) -> [u8; 32]`,
 a thin wrapper over `x25519_dalek::x25519` (the crate's existing dependency,
@@ -139,7 +137,7 @@ directly for every vector above.
 `HybridKemKeypair::{from_secrets, encapsulate_deterministic}` entry points
 (WP5/K-5 — see `docs/hybrid-profiles.md` §4.1). **No second, independent
 implementation of this crate's original hybrid combiner exists** — this is
-exactly the gap PG-001/K-5's "test vector vs a second implementation, if one
+exactly the gap K-5's "test vector vs a second implementation, if one
 exists" wording calls out. `tests/kat_hybrid_v1.rs`'s
 `independent_recomputation_of_first_vector` test partially closes that gap
 by reimplementing the whole v1 combiner from scratch for the first vector,

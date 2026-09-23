@@ -1,7 +1,6 @@
 ## pqc-kem v0.3.0 (Unreleased)
 
-This release combines three work packages from the SAGP gap-analysis roadmap
-(`docs/gap-analysis/pqc-kem-gap-roadmap.md`): **WP1** (feature-surface hygiene — K-1, K-3,
+This release combines three work packages: **WP1** (feature-surface hygiene — K-1, K-3,
 unused dependencies), **WP2** (secret-material zeroization hardening — A-Z1), and **WP3**
 (docs truthfulness, WASM target matrix, WIT header, CI coverage — X-3, X-5, K-2, A-D1). Full
 details for every change are in [`CHANGELOG.md`](./CHANGELOG.md)'s `[0.3.0] - Unreleased`

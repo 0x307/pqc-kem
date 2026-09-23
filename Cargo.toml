@@ -86,7 +86,7 @@ digest = { version = "0.10", default-features = false }
 
 # Symmetric encryption post-KEM (pure Rust, no_std). Currently unused in
 # `src/` -- it will move behind a new opt-in `aead-wrap` feature in a later
-# work package (see docs/gap-analysis/pqc-kem-gap-roadmap.md §3.5). Kept
+# work package (WP6). Kept
 # non-optional for now; do not treat this as an unused-dep regression.
 chacha20poly1305 = { version = "0.10", default-features = false }
 
@@ -158,7 +158,7 @@ hqc = ["dep:oqs"]
 
 # kat: deterministic, testing/interop-only entry points needed to check this
 # crate's ML-KEM output against published Known-Answer-Test vectors (X-4/P1,
-# see docs/gap-analysis/pqc-kem-gap-roadmap.md §3.7 and tests/vectors/README.md).
+# see tests/vectors/README.md).
 # Adds a handful of extra methods to MlKem{512,768,1024}Keypair
 # (from_seed_halves, encapsulate_deterministic,
 # from_expanded_decapsulation_key_bytes, to_expanded_decapsulation_key_bytes)

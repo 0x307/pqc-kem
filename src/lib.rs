@@ -139,7 +139,7 @@ pub const HYBRID_PROFILE_V1: &str = "HybridKem-X25519-MLKEM768-v1";
 pub const HYBRID_PROFILE_V2: &str = "HybridKem-X25519-MLKEM768-v2";
 
 /// Alias for [`HYBRID_PROFILE_V1`], kept for wire/API compatibility with
-/// SAGP deployments that already treat this constant as identifying
+/// existing deployments that already treat this constant as identifying
 /// `PRIMARY_ALGORITHM`'s hybrid construction. Points at v1, not v2 — see
 /// `docs/hybrid-profiles.md` for the rationale and migration guidance.
 pub const HYBRID_PROFILE_ID: &str = HYBRID_PROFILE_V1;

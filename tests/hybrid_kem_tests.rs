@@ -365,7 +365,7 @@ fn hybrid_v1_secret_bytes_wrong_length_rejected() {
 fn hybrid_public_key_v1_json_shape_unchanged_after_byte_api_addition() {
     // Freezes the exact JSON field set (K-5 compatibility constraint: the
     // byte-encoding API added in 0.3.0 must not change the JSON wire shape
-    // SAGP consumes today).
+    // existing deployments consume today).
     let keypair = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
     let pub_key = keypair.public_key();
     let json = pub_key.to_json().expect("to_json failed");

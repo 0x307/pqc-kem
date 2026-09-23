@@ -4,8 +4,7 @@
 # `compile_error!` stub -- neither was ever implemented) have been removed
 # entirely, along with the `src/bike`/`src/mceliece` modules and the
 # `pqcrypto-classicmceliece`/`pqcrypto-traits` dependencies (see
-# CHANGELOG.md's 0.3.0 entry and docs/gap-analysis/pqc-kem-gap-roadmap.md
-# WP1). There is therefore no more "must fail" gated-feature contract to
+# CHANGELOG.md's 0.3.0 entry). There is therefore no more "must fail" gated-feature contract to
 # assert here -- every documented feature combination, including
 # `--all-features`, is expected to build and test cleanly.
 #
@@ -17,7 +16,6 @@
 #   5. `cargo test --all-features` succeeds.
 #   6. `cargo build --features kat` succeeds (WP4/X-4/P1: deterministic
 #      Known-Answer-Test entry points -- see
-#      docs/gap-analysis/pqc-kem-gap-roadmap.md §3.7 and
 #      tests/vectors/README.md).
 #   7. `cargo test --features kat` succeeds (runs tests/kat_ml_kem.rs and
 #      tests/kat_x25519.rs against tests/vectors/**).

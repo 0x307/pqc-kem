@@ -8,7 +8,7 @@
 //! then frozen here so future refactors of `hybrid.rs` can't silently
 //! change the v1 wire/KDF behavior without this test noticing.
 //!
-//! To partially satisfy PG-001's "cross-check against a second
+//! To partially satisfy K-5's "cross-check against a second
 //! implementation" ask despite there being no external implementation of
 //! this exact combiner, [`independent_recomputation_of_first_vector`]
 //! reimplements the v1 combiner from scratch using `x25519_dalek`,

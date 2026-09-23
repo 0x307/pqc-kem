@@ -185,8 +185,7 @@ impl MlKem512Keypair {
 }
 
 /// **Known-Answer-Test-only entry points.** Gated behind the `kat` Cargo
-/// feature (non-default). See `tests/vectors/README.md` and
-/// `docs/gap-analysis/pqc-kem-gap-roadmap.md` §3.7 (X-4/P1).
+/// feature (non-default). See `tests/vectors/README.md`.
 ///
 /// Every method here exists solely so this crate's output can be checked
 /// against externally published Known-Answer-Test vectors (NIST ACVP

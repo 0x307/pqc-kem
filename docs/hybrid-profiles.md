@@ -1,12 +1,10 @@
 # Hybrid KEM Profiles — `HybridKem-X25519-MLKEM768-v1` and `-v2` (X-Wing)
 
-**Status:** normative for this crate (`pqc-kem`), version 0.3.0. Satisfies gap
-item K-5 ("Hybrid construction not specified as a named profile") from
-[`docs/gap-analysis/pqc-kem-gap-roadmap.md`](gap-analysis/pqc-kem-gap-roadmap.md)
-§3.6/WP5, per the user decision on Open Question Q2 (§5): formalize the
+**Status:** normative for this crate (`pqc-kem`), version 0.3.0. Closes gap
+item K-5 ("Hybrid construction not specified as a named profile"): formalize the
 existing v1 combiner as a named profile **and** add X-Wing as a second named
 profile (`-v2`), recommended for new deployments. **v1 remains wire-compatible
-with what SAGP consumes today** — this document changes no bytes, only names
+with what existing deployments consume today** — this document changes no bytes, only names
 and publishes them.
 
 Both profiles combine the same two component algorithms — **X25519**
@@ -20,7 +18,7 @@ decapsulated by a v2/X-Wing keypair and vice versa (see
 
 | | Profile ID | Rust type | Combiner | pk layout | ct layout | Recommended for |
 |---|---|---|---|---|---|---|
-| **v1** | `HybridKem-X25519-MLKEM768-v1` | [`fips203::HybridKemKeypair`](../src/fips203/hybrid.rs) | `HKDF-SHA256` | `x25519(32) ‖ mlkem(1184)` | `x25519(32) ‖ mlkem(1088)` | Existing SAGP deployments (wire-compat) |
+| **v1** | `HybridKem-X25519-MLKEM768-v1` | [`fips203::HybridKemKeypair`](../src/fips203/hybrid.rs) | `HKDF-SHA256` | `x25519(32) ‖ mlkem(1184)` | `x25519(32) ‖ mlkem(1088)` | Existing deployments (wire-compat) |
 | **v2** | `HybridKem-X25519-MLKEM768-v2` | [`fips203::XWingKeypair`](../src/fips203/xwing.rs) | `SHA3-256` (X-Wing) | `mlkem(1184) ‖ x25519(32)` | `mlkem(1088) ‖ x25519(32)` | **New deployments** |
 
 Profile identifier constants live at the crate root:
@@ -46,7 +44,7 @@ impl HybridProfile {
 ```
 
 `PRIMARY_ALGORITHM`/`HYBRID_PROFILE_ID` still point at **v1** in this
-release, for wire compatibility with existing SAGP deployments.
+release, for wire compatibility with existing deployments.
 
 ---
 
@@ -325,7 +323,7 @@ implementation MAY provide the following derandomized variant"), and
   (§1.6), and published test vectors independently checkable against other
   implementations (Apple CryptoKit, BoringSSL, Cloudflare CIRCL, RustCrypto
   `x-wing`, and others — see the draft's "Implementations" appendix).
-- **Existing SAGP / `pqc-kem` 0.1.x–0.2.x deployments:** stay on **v1**
+- **Existing `pqc-kem` 0.1.x–0.2.x deployments:** stay on **v1**
   (`HybridKemKeypair`) — it is `PRIMARY_ALGORITHM`, `HYBRID_PROFILE_ID` still
   points at it, and its JSON wire format and combiner are byte-for-byte
   unchanged from every prior release.
@@ -347,7 +345,7 @@ change v1's wire/KDF behavior without `tests/kat_hybrid_v1.rs` failing.
 
 **No second, independent implementation of this exact combiner exists** (see
 [`tests/vectors/README.md`](../tests/vectors/README.md) for the full
-statement) — this is exactly the gap PG-001/K-5 called out
+statement) — this is exactly the gap K-5 called out
 ("...a test vector vs a second implementation, if one exists"). To partially
 close it despite that, `tests/kat_hybrid_v1.rs::independent_recomputation_of_first_vector`
 reimplements the entire v1 combiner from scratch for the first vector using

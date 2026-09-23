@@ -5,7 +5,7 @@
 //! full normative spec, including the exact draft version/date cited and
 //! test-vector provenance. **Recommended for new deployments** (profile v1,
 //! [`crate::fips203::HybridKemKeypair`], remains the wire-compatible default
-//! for existing SAGP deployments — see [`crate::HYBRID_PROFILE_ID`]).
+//! for existing deployments — see [`crate::HYBRID_PROFILE_ID`]).
 //!
 //! # Construction (draft-connolly-cfrg-xwing-kem-10, 2026-03-02)
 //! ```text
