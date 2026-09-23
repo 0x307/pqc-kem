@@ -56,6 +56,7 @@ use wasm_bindgen::prelude::*;
 
 use pqc_kem::fips203::{HybridKemKeypair, MlKem512Keypair, MlKem768Keypair, MlKem1024Keypair};
 use pqc_kem::types::{HybridKemCiphertext, HybridPublicKey, KemAlgorithm, KemCiphertext, KemPublicKey};
+use pqc_kem::aead_wrap::{open_hybrid, open_ml_kem_768, seal_hybrid, seal_ml_kem_768, SealedBox};
 
 // ── RNG for WASM ──────────────────────────────────────────────────────────────
 // In WASM, entropy comes from window.crypto.getRandomValues() via getrandom
@@ -154,6 +155,37 @@ impl WasmHybridKemKeypair {
         let ss = self.inner.decapsulate(&ct).map_err(to_js_error)?;
         Ok(ss.bytes.clone())
     }
+
+    /// Returns the public key in its canonical profile-v1 byte encoding:
+    /// `x25519_pk(32) ‖ mlkem_ek(1184)`, 1216 bytes.
+    #[wasm_bindgen]
+    pub fn public_key_bytes(&self) -> Result<Vec<u8>, JsValue> {
+        self.inner.public_key().to_bytes().map_err(to_js_error)
+    }
+
+    /// Decapsulate a ciphertext in its canonical profile-v1 byte encoding
+    /// (`x25519_eph_pk(32) ‖ mlkem_ct(1088)`, 1120 bytes), as produced by
+    /// `hybrid_encapsulate_bytes()`. Returns the 32-byte shared secret.
+    #[wasm_bindgen]
+    pub fn decapsulate_bytes(&self, ciphertext_bytes: &[u8]) -> Result<Vec<u8>, JsValue> {
+        let ct = HybridKemCiphertext::from_bytes(ciphertext_bytes).map_err(to_js_error)?;
+        let ss = self.inner.decapsulate(&ct).map_err(to_js_error)?;
+        Ok(ss.bytes.clone())
+    }
+
+    /// Open a box sealed to this keypair by `aead_seal_hybrid()`.
+    ///
+    /// `context` and `aad` must be exactly what the sealer used. Any failure
+    /// after the structural checks is reported the same way, so a wrong key,
+    /// a tampered box and a wrong context are indistinguishable.
+    #[wasm_bindgen]
+    pub fn aead_open(&self, sealed_json: &str, context: &[u8], aad: &[u8]) -> Result<Vec<u8>, JsValue> {
+        let sealed = SealedBox::from_json(sealed_json).map_err(to_js_error)?;
+        let plaintext = open_hybrid(&self.inner, &sealed, context, aad).map_err(to_js_error)?;
+        // JavaScript cannot be made to zeroize, so the copy handed across is
+        // the caller's to manage; the Rust-side buffer zeroizes as it drops.
+        Ok(plaintext.to_vec())
+    }
 }
 
 /// Encapsulate to a recipient's hybrid public key.
@@ -187,6 +219,53 @@ pub fn hybrid_encapsulate(recipient_public_key_json: &str) -> Result<String, JsV
     );
 
     Ok(result)
+}
+
+/// Encapsulate to a hybrid public key given as canonical profile-v1 bytes
+/// (1216, from `WasmHybridKemKeypair.public_key_bytes()`).
+///
+/// Returns a JSON object: `{"ciphertext_bytes": "<base64url, 1120 bytes>",
+/// "shared_secret": "<base64url, 32 bytes>"}`.
+#[wasm_bindgen]
+pub fn hybrid_encapsulate_bytes(recipient_public_key_bytes: &[u8]) -> Result<String, JsValue> {
+    use base64ct::{Base64Url, Encoding};
+
+    let pub_key = HybridPublicKey::from_bytes(recipient_public_key_bytes).map_err(to_js_error)?;
+    let mut rng = wasm_rng();
+    let (ct, ss) = HybridKemKeypair::encapsulate_to(&mut rng, &pub_key).map_err(to_js_error)?;
+    let ct_bytes = ct.to_bytes().map_err(to_js_error)?;
+
+    Ok(format!(
+        r#"{{"ciphertext_bytes":"{}","shared_secret":"{}"}}"#,
+        Base64Url::encode_string(&ct_bytes),
+        Base64Url::encode_string(&ss.bytes),
+    ))
+}
+
+/// The hybrid construction's named profile identifier,
+/// `"HybridKem-X25519-MLKEM768-v1"`.
+#[wasm_bindgen]
+pub fn hybrid_profile_id() -> String {
+    pqc_kem::HYBRID_PROFILE_ID.into()
+}
+
+/// Seal a payload to a hybrid public key (JSON, from
+/// `WasmHybridKemKeypair.public_key_json()`) with XChaCha20-Poly1305.
+///
+/// Only XChaCha20-Poly1305 is offered from JavaScript: its 24-byte nonce is
+/// generated inside the library and is safe at random, so nonce management
+/// never becomes the caller's problem. Returns the sealed box as JSON.
+#[wasm_bindgen]
+pub fn aead_seal_hybrid(
+    recipient_public_key_json: &str,
+    context: &[u8],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<String, JsValue> {
+    let pub_key = HybridPublicKey::from_json(recipient_public_key_json).map_err(to_js_error)?;
+    let mut rng = wasm_rng();
+    let sealed = seal_hybrid(&mut rng, &pub_key, context, aad, plaintext).map_err(to_js_error)?;
+    sealed.to_json().map_err(to_js_error)
 }
 
 // ── ML-KEM-512 ────────────────────────────────────────────────────────────────
@@ -283,6 +362,17 @@ impl WasmMlKem768Keypair {
         let ss = self.inner.decapsulate(&ct).map_err(to_js_error)?;
         Ok(ss.bytes.clone())
     }
+
+    /// Open a box sealed to this keypair by `aead_seal_ml_kem_768()`.
+    ///
+    /// `context` and `aad` must be exactly what the sealer used. Any failure
+    /// after the structural checks is reported the same way.
+    #[wasm_bindgen]
+    pub fn aead_open(&self, sealed_json: &str, context: &[u8], aad: &[u8]) -> Result<Vec<u8>, JsValue> {
+        let sealed = SealedBox::from_json(sealed_json).map_err(to_js_error)?;
+        let plaintext = open_ml_kem_768(&self.inner, &sealed, context, aad).map_err(to_js_error)?;
+        Ok(plaintext.to_vec())
+    }
 }
 
 /// Encapsulate to an ML-KEM-768 public key (1184 bytes).
@@ -301,6 +391,23 @@ pub fn ml_kem_768_encapsulate(recipient_public_key_bytes: &[u8]) -> Result<Strin
         Base64Url::encode_string(&ct.bytes),
         Base64Url::encode_string(&ss.bytes),
     ))
+}
+
+/// Seal a payload to an ML-KEM-768 public key (1184 bytes) with
+/// XChaCha20-Poly1305. Returns the sealed box as JSON.
+///
+/// XChaCha20-Poly1305 only, for the same reason as `aead_seal_hybrid()`.
+#[wasm_bindgen]
+pub fn aead_seal_ml_kem_768(
+    recipient_public_key_bytes: &[u8],
+    context: &[u8],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<String, JsValue> {
+    let pk = KemPublicKey::new(KemAlgorithm::MlKem768, recipient_public_key_bytes.to_vec());
+    let mut rng = wasm_rng();
+    let sealed = seal_ml_kem_768(&mut rng, &pk, context, aad, plaintext).map_err(to_js_error)?;
+    sealed.to_json().map_err(to_js_error)
 }
 
 // ── ML-KEM-1024 ───────────────────────────────────────────────────────────────

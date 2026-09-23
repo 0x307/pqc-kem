@@ -1,26 +1,26 @@
-# verify-gates.ps1 - Asserts the gated-feature contract for pqc-kem.
+# verify-gates.ps1 - Asserts the supported-feature-surface contract for pqc-kem.
 #
-# Consolidates the ad-hoc build-bike.ps1 probe into one check covering the
-# still-gated (not-yet-implemented) features: bike, mceliece. `hqc` moved
-# out of this list -- it is a real, working implementation now (via
-# `liboqs`/the `oqs` crate; see README.md "Why liboqs and not pqcrypto-hqc"
-# and CHANGELOG.md's 0.2.0 entry), not a compile_error! stub, so it gets its
-# own positive "must succeed" check below instead of the gated-feature loop.
+# As of 0.3.0, the `bike` and `mceliece` features (each a permanent
+# `compile_error!` stub -- neither was ever implemented) have been removed
+# entirely, along with the `src/bike`/`src/mceliece` modules and the
+# `pqcrypto-classicmceliece`/`pqcrypto-traits` dependencies (see
+# CHANGELOG.md's 0.3.0 entry). There is therefore no more "must fail" gated-feature contract to
+# assert here -- every documented feature combination, including
+# `--all-features`, is expected to build and test cleanly.
 #
 # Contract asserted:
 #   1. `cargo build` (default features) succeeds.
 #   2. `cargo build --no-default-features` (no_std path) succeeds.
-#   3. `cargo build --features hqc` succeeds (real implementation, not gated).
-#   4. `cargo build --features <gated>` FAILS for each still-gated feature
-#      (bike, mceliece), and the error output names that feature and says
-#      "not yet implemented" - confirming the compile_error! fires loudly
-#      rather than silently miscompiling or panicking at runtime.
-#   5. That failure is EXACTLY ONE error, not the intended compile_error!
-#      buried under a pile of raw errors from the still-broken pqcrypto_*
-#      calls elsewhere in the module. A compile_error! item doesn't exclude
-#      the rest of the module from being type-checked in the same pass, so
-#      this only holds if the broken struct/impl code is also excluded via
-#      #[cfg(any())] -- this check guards against that regressing silently.
+#   3. `cargo build --features hqc` succeeds (real implementation via `liboqs`).
+#   4. `cargo build --all-features` succeeds.
+#   5. `cargo test --all-features` succeeds.
+#   6. `cargo build --features kat` succeeds (WP4/X-4/P1: deterministic
+#      Known-Answer-Test entry points -- see
+#      tests/vectors/README.md).
+#   7. `cargo test --features kat` succeeds (runs tests/kat_ml_kem.rs and
+#      tests/kat_x25519.rs against tests/vectors/**).
+#   8. `cargo build --no-default-features --features kat` succeeds (kat is
+#      no_std/alloc-compatible, additive only).
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File verify-gates.ps1
@@ -35,7 +35,6 @@ $ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $ScriptDir
 
-$GatedFeatures = @("bike", "mceliece")
 $Failures = @()
 
 try {
@@ -49,7 +48,7 @@ try {
     }
 
     # -- no_std build (--no-default-features) must succeed --
-    # As of CRA-1, this crate is rlib-only and never defines
+    # This crate is rlib-only and never defines
     # #[global_allocator]/#[panic_handler] itself (see src/lib.rs) -- an
     # ordinary no_std library consumer needs nothing beyond
     # --no-default-features. (The standalone WASM cdylib artifact, which DOES
@@ -72,42 +71,47 @@ try {
         Write-Host "[verify-gates]   OK - hqc build succeeded." -ForegroundColor Green
     }
 
-    # -- Each gated feature must fail, naming itself --
-    foreach ($feature in $GatedFeatures) {
-        Write-Host "[verify-gates] cargo build --features $feature (expect failure)..." -ForegroundColor Cyan
-        $output = cargo build --features $feature 2>&1 | Out-String
-        $exitCode = $LASTEXITCODE
+    # -- --all-features must succeed (0.3.0: no more gated features) --
+    Write-Host "[verify-gates] cargo build --all-features..." -ForegroundColor Cyan
+    $allFeaturesOutput = cargo build --all-features 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $Failures += "--all-features build FAILED (expected success as of 0.3.0 -- bike/mceliece were removed, not just gated):`n$allFeaturesOutput"
+    } else {
+        Write-Host "[verify-gates]   OK - --all-features build succeeded." -ForegroundColor Green
+    }
 
-        if ($exitCode -eq 0) {
-            $Failures += "--features $feature succeeded but was expected to fail with compile_error!."
-            continue
-        }
+    # -- --all-features tests must succeed --
+    Write-Host "[verify-gates] cargo test --all-features..." -ForegroundColor Cyan
+    $allFeaturesTestOutput = cargo test --all-features 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $Failures += "--all-features test FAILED (expected success):`n$allFeaturesTestOutput"
+    } else {
+        Write-Host "[verify-gates]   OK - --all-features tests succeeded." -ForegroundColor Green
+    }
 
-        if ($output -notmatch [regex]::Escape($feature)) {
-            $Failures += "--features $feature failed, but its compile_error! message does not name the feature '$feature'."
-            continue
-        }
+    # -- kat must succeed (WP4/X-4/P1: Known-Answer Tests) --
+    Write-Host "[verify-gates] cargo build --features kat..." -ForegroundColor Cyan
+    $katBuildOutput = cargo build --features kat 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $Failures += "kat build (--features kat) FAILED (expected success):`n$katBuildOutput"
+    } else {
+        Write-Host "[verify-gates]   OK - kat build succeeded." -ForegroundColor Green
+    }
 
-        if ($output -notmatch "not yet implemented") {
-            $Failures += "--features $feature failed, but the message does not say 'not yet implemented'."
-            continue
-        }
+    Write-Host "[verify-gates] cargo test --features kat..." -ForegroundColor Cyan
+    $katTestOutput = cargo test --features kat 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $Failures += "kat test (--features kat) FAILED (expected success -- runs tests/kat_ml_kem.rs and tests/kat_x25519.rs against tests/vectors/**):`n$katTestOutput"
+    } else {
+        Write-Host "[verify-gates]   OK - kat tests succeeded." -ForegroundColor Green
+    }
 
-        # cargo's own summary line ("... due to N previous errors") is the
-        # authoritative count of real errors, independent of how many
-        # warnings or note/help sub-lines surround them.
-        $summaryMatch = [regex]::Match($output, "due to (\d+) previous error")
-        if (-not $summaryMatch.Success) {
-            $Failures += "--features $feature failed, but no 'due to N previous error(s)' summary line was found to verify the error count."
-            continue
-        }
-        $errorCount = [int]$summaryMatch.Groups[1].Value
-        if ($errorCount -ne 1) {
-            $Failures += "--features $feature produced $errorCount errors, not exactly 1. The compile_error! is likely buried under raw errors from the still-broken implementation -- check that the struct/impl code is gated #[cfg(any())], not just #[cfg(feature = `"$feature`")]."
-            continue
-        }
-
-        Write-Host "[verify-gates]   OK - $feature failed loudly and named itself, with no other errors burying the message." -ForegroundColor Green
+    Write-Host "[verify-gates] cargo build --no-default-features --features kat..." -ForegroundColor Cyan
+    $katNoStdOutput = cargo build --no-default-features --features kat 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $Failures += "kat no_std build (--no-default-features --features kat) FAILED (expected success -- kat is no_std/alloc-compatible):`n$katNoStdOutput"
+    } else {
+        Write-Host "[verify-gates]   OK - kat no_std build succeeded." -ForegroundColor Green
     }
 } finally {
     Pop-Location

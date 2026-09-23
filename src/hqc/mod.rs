@@ -4,9 +4,13 @@
 //! to ML-KEM, providing diversity in the post-quantum algorithm portfolio.
 //!
 //! # Parameter Sets
-//! - [`Hqc128Keypair`] — Security Level 1 (AES-128 equivalent)
-//! - [`Hqc192Keypair`] — Security Level 3 (AES-192 equivalent)
-//! - [`Hqc256Keypair`] — Security Level 5 (AES-256 equivalent)
+//!
+//! These types only exist when this crate is built with `--features hqc`
+//! (plain code spans below, not links, so `cargo doc --no-deps` stays
+//! warning-free with default features, where none of the three exist):
+//! - `Hqc128Keypair` — Security Level 1 (AES-128 equivalent)
+//! - `Hqc192Keypair` — Security Level 3 (AES-192 equivalent)
+//! - `Hqc256Keypair` — Security Level 5 (AES-256 equivalent)
 //!
 //! # Feature Gate
 //! This module requires the `hqc` feature flag:
@@ -75,6 +79,14 @@ use rand_core::{CryptoRng, RngCore};
 #[cfg(feature = "hqc")]
 use oqs::kem::{Algorithm as OqsAlgorithm, Kem as OqsKem};
 
+// A-Z1 (0.3.0): `Hqc{128,192,256}Keypair` previously implemented no
+// `Drop`/`Zeroize` at all — `secret_key_bytes` (a plain `Vec<u8>`) leaked
+// into freed heap memory unzeroized. `Vec<u8>: Zeroize`/`ZeroizeOnDrop` is
+// available whenever this crate's `zeroize` dependency has its `alloc`
+// feature enabled (it always does — see Cargo.toml).
+#[cfg(feature = "hqc")]
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 use crate::error::KemError;
 
 #[cfg(feature = "hqc")]
@@ -117,7 +129,14 @@ fn truncate_shared_secret(mut bytes: Vec<u8>) -> Vec<u8> {
 ///
 /// assert_eq!(shared_secret.bytes, recovered.bytes);
 /// ```
+///
+/// # Secret handling
+/// Both fields are zeroized on drop (`#[derive(Zeroize, ZeroizeOnDrop)]`,
+/// A-Z1 hardening, 0.3.0). `public_key_bytes` does not strictly need to be
+/// zeroized — it is public — but zeroizing it too is harmless and keeps
+/// the derive simple; the field that matters is `secret_key_bytes`.
 #[cfg(feature = "hqc")]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Hqc128Keypair {
     public_key_bytes: Vec<u8>,
     secret_key_bytes: Vec<u8>,
@@ -228,7 +247,12 @@ impl Hqc128Keypair {
 /// HQC-192 keypair (NIST 2025, Security Level 3).
 ///
 /// Public key: 4522 bytes | Ciphertext: 8978 bytes | Shared secret: 64 bytes (truncated to 32)
+///
+/// # Secret handling
+/// Both fields are zeroized on drop (`#[derive(Zeroize, ZeroizeOnDrop)]`,
+/// A-Z1 hardening, 0.3.0). See [`Hqc128Keypair`]'s "Secret handling" note.
 #[cfg(feature = "hqc")]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Hqc192Keypair {
     public_key_bytes: Vec<u8>,
     secret_key_bytes: Vec<u8>,
@@ -334,7 +358,12 @@ impl Hqc192Keypair {
 /// HQC-256 keypair (NIST 2025, Security Level 5).
 ///
 /// Public key: 7245 bytes | Ciphertext: 14421 bytes | Shared secret: 64 bytes (truncated to 32)
+///
+/// # Secret handling
+/// Both fields are zeroized on drop (`#[derive(Zeroize, ZeroizeOnDrop)]`,
+/// A-Z1 hardening, 0.3.0). See [`Hqc128Keypair`]'s "Secret handling" note.
 #[cfg(feature = "hqc")]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Hqc256Keypair {
     public_key_bytes: Vec<u8>,
     secret_key_bytes: Vec<u8>,

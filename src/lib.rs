@@ -13,15 +13,10 @@
 //!
 //! - **HQC** (NIST 2025) — Code-based alternative, gated behind `hqc` feature.
 //!   Real implementation via `liboqs` (native targets only, not WASM).
-//!   - [`hqc::Hqc128Keypair`], [`hqc::Hqc192Keypair`], [`hqc::Hqc256Keypair`]
-//!
-//! - **BIKE** (NIST Round 4 alternate) — gated behind `bike` feature.
-//!   NOT YET IMPLEMENTED: enabling `bike` fails the build by design.
-//!   - [`bike::BikeKeypair`]
-//!
-//! - **Classic McEliece** (NIST Round 4 alternate) — gated behind `mceliece` feature.
-//!   NOT YET IMPLEMENTED: enabling `mceliece` fails the build by design.
-//!   - [`mceliece::McElieceKeypair`]
+//!   - `hqc::Hqc128Keypair`, `hqc::Hqc192Keypair`, `hqc::Hqc256Keypair` (only
+//!     compiled with `--features hqc`; plain code spans here, not links, so
+//!     `cargo doc --no-deps` stays warning-free with default features, where
+//!     these types do not exist)
 //!
 //! ## Quick Start
 //!
@@ -93,20 +88,17 @@ pub mod fips203;
 /// via `liboqs`, native targets only (not WASM).
 pub mod hqc;
 
-/// BIKE (NIST Round 4 alternate) — gated behind `bike` feature, NOT YET IMPLEMENTED.
-pub mod bike;
-
-/// Classic McEliece (NIST Round 4 alternate) — gated behind `mceliece` feature, NOT YET IMPLEMENTED.
-pub mod mceliece;
-
-/// NTRU — eliminated from NIST standardization. Deprecation marker only.
-pub mod ntru;
+/// KEM shared secret → HKDF-SHA256 → AEAD-sealed payload, in one path.
+/// Gated behind the non-default `aead-wrap` feature.
+#[cfg(feature = "aead-wrap")]
+pub mod aead_wrap;
 
 // ── Top-Level Re-exports ──────────────────────────────────────────────────────
 
 pub use error::{KemError, KemResult};
 pub use types::{
     HybridKemCiphertext,
+    HybridProfile,
     HybridPublicKey,
     KemAlgorithm,
     KemCiphertext,
@@ -121,6 +113,7 @@ pub use fips203::{
     MlKem512Keypair,
     MlKem768Keypair,
     MlKem1024Keypair,
+    XWingKeypair,
 };
 
 // ── Version ───────────────────────────────────────────────────────────────────
@@ -131,5 +124,27 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Algorithm suite identifier for the primary hybrid construction.
 pub const PRIMARY_ALGORITHM: &str = "X25519+ML-KEM-768";
 
-/// HKDF info string used in the hybrid KEM construction.
+/// HKDF info string used in the hybrid KEM construction (profile v1).
 pub const HYBRID_KEM_INFO: &str = "pqc-kem-hybrid-v1";
+
+// ── Named Hybrid KEM Profiles (K-5, WP5) ───────────────────────────────────────
+//
+// See `docs/hybrid-profiles.md` for the full normative spec of both
+// profiles: canonical byte layouts, combiners, and test vectors.
+
+/// Profile identifier for this crate's original hybrid combiner
+/// (`fips203::HybridKemKeypair`) — wire-compatible with every prior 0.x
+/// release. `HKDF-SHA256(x25519_ss ‖ mlkem_ss, info="pqc-kem-hybrid-v1")`;
+/// does not bind ciphertext/public key into the KDF.
+pub const HYBRID_PROFILE_V1: &str = "HybridKem-X25519-MLKEM768-v1";
+
+/// Profile identifier for X-Wing (`fips203::XWingKeypair`,
+/// `draft-connolly-cfrg-xwing-kem`) — `SHA3-256`-based combiner that binds
+/// `ct_X`/`pk_X`. **Recommended for new deployments.**
+pub const HYBRID_PROFILE_V2: &str = "HybridKem-X25519-MLKEM768-v2";
+
+/// Alias for [`HYBRID_PROFILE_V1`], kept for wire/API compatibility with
+/// existing deployments that already treat this constant as identifying
+/// `PRIMARY_ALGORITHM`'s hybrid construction. Points at v1, not v2 — see
+/// `docs/hybrid-profiles.md` for the rationale and migration guidance.
+pub const HYBRID_PROFILE_ID: &str = HYBRID_PROFILE_V1;

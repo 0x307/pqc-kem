@@ -52,8 +52,8 @@ Write-Host "[build] Writing dist/package.json..." -ForegroundColor Cyan
 $PackageJson = @'
 {
   "name": "pqc-kem",
-  "version": "0.2.0",
-  "description": "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — standalone WASM",
+  "version": "0.3.0",
+  "description": "Post-quantum Key Encapsulation Mechanisms: ML-KEM-768 (FIPS 203) and the X25519+ML-KEM-768 hybrid — standalone WASM",
   "type": "module",
   "main": "./pqc_kem.js",
   "types": "./pqc_kem.d.ts",

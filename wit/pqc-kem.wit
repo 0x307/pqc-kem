@@ -1,16 +1,22 @@
 // =============================================================================
-// wit/pqc-kem.wit  —  REFERENCE DOCUMENT ONLY
+// wit/pqc-kem.wit  —  REFERENCE DOCUMENT ONLY  (pqc-kem-wasm 0.3.0)
 // =============================================================================
 //
 // ⚠️  THIS IS NOT A BUILDABLE WIT INTERFACE  ⚠️
 //
-// This file documents the flat wasm-bindgen API surface of `pqc-kem`.
-// It is written in WIT-style pseudocode for readability, but it CANNOT be
-// used with `jco`, `cargo component`, or any WASM Component Model toolchain.
+// This file is a descriptive interface contract for the flat wasm-bindgen
+// JS API produced by the sibling `pqc-kem-wasm` crate (see
+// `pqc-kem-wasm/src/lib.rs`) — it documents, in WIT-style pseudocode for
+// readability, every class/method/free-function that crate exports. It is
+// NOT parseable by `jco`, `cargo component`, or any WASM Component Model
+// toolchain, and no WASM Component (`wasm32-wasip2` or otherwise) is built
+// anywhere in this repo. `pqc-kem-wasm`'s `crate-type` is `["cdylib"]`
+// built with plain `wasm-bindgen`/`wasm-pack`, not `cargo component`.
 //
-// WHY: The compiled output (`pqc_kem.js` / `pqc_kem_bg.wasm`) is produced by
-//   `wasm-pack` with `wasm-bindgen`, which generates a flat JS module — NOT a
-//   WASM Component Model component. The two formats are incompatible.
+// WHY WIT-style pseudocode at all, if it's not buildable: the shape below
+// (resources with methods, free functions with `result<T, error>` returns)
+// maps closely enough to the actual `#[wasm_bindgen]` surface to serve as a
+// quick reference without needing a running toolchain — nothing more.
 //
 // TO USE THE ACTUAL API:
 //   Import directly from the wasm-pack output:
@@ -19,19 +25,23 @@
 //       from './pqc_kem.js';
 //     await init();
 //
-//   See the JavaScript usage example at the bottom of this file.
+//   See the JavaScript usage example at the bottom of this file, and
+//   README.md's "Quick Start — JavaScript / TypeScript" sections.
 //
-// BUILD COMMAND (produces pqc_kem.js + pqc_kem_bg.wasm):
-//   wasm-pack build --target web --features wasm
+// BUILD COMMAND (produces pqc_kem.js + pqc_kem_bg.wasm in dist/):
+//   powershell -ExecutionPolicy Bypass -File build.ps1
+// which runs, from pqc-kem-wasm/ (there is no `wasm` feature — it was
+// removed; see CHANGELOG.md's 0.3.0 entry):
+//   wasm-pack build --target web --out-dir ../dist --release -- --no-default-features
 //
-// SOURCE OF TRUTH: src/wasm.rs
+// SOURCE OF TRUTH: pqc-kem-wasm/src/lib.rs
 // =============================================================================
 
 // -----------------------------------------------------------------------------
 // PACKAGE (informational — not a real WIT package declaration)
 // -----------------------------------------------------------------------------
 //
-// package 0x307:pqc-kem@0.1.0;   // ← pseudocode only, not parseable by jco
+// package 0x307:pqc-kem@0.3.0;   // ← pseudocode only, not parseable by jco
 
 // =============================================================================
 // CLASS: WasmHybridKemKeypair
@@ -77,6 +87,20 @@
 //   /// Returns the 32-byte shared secret as a Uint8Array.
 //   /// Throws a JavaScript Error if the ciphertext is malformed or mismatched.
 //   decapsulate: func(ciphertext_json: string) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// The public key in its canonical profile-v1 byte encoding:
+//   /// x25519_pk(32) ‖ mlkem_ek(1184). Pass to hybrid_encapsulate_bytes().
+//   public_key_bytes: func() -> result<Uint8Array, error>;  // 1216 bytes
+//
+//   /// Decapsulate a canonical profile-v1 ciphertext,
+//   /// x25519_eph_pk(32) ‖ mlkem_ct(1088), from hybrid_encapsulate_bytes().
+//   decapsulate_bytes: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Open a sealed box produced by aead_seal_hybrid(). `context` and `aad`
+//   /// must match what the sealer used. Every failure after the structural
+//   /// checks throws the same error: wrong key, tampering and a wrong
+//   /// context are indistinguishable by design.
+//   aead_open: func(sealed_json: string, context: Uint8Array, aad: Uint8Array) -> result<Uint8Array, error>;
 //
 //   /// Zeroizes secret key material in WASM memory.
 //   /// Called automatically via [Symbol.dispose]() in environments that support
@@ -138,6 +162,10 @@
 //   ///
 //   /// Throws a JavaScript Error if the ciphertext is invalid or mismatched.
 //   decapsulate: func(ciphertext_bytes: Uint8Array) -> result<Uint8Array, error>;  // 32 bytes
+//
+//   /// Open a sealed box produced by aead_seal_ml_kem_768(). `context` and
+//   /// `aad` must match what the sealer used; failures are indistinguishable.
+//   aead_open: func(sealed_json: string, context: Uint8Array, aad: Uint8Array) -> result<Uint8Array, error>;
 //
 //   /// Zeroizes secret key material. Also called via [Symbol.dispose]().
 //   free: func();
@@ -272,7 +300,7 @@
 // pqc_kem_version
 // -----------------------------------------------------------------------------
 //
-// Returns the crate version string (e.g. "0.1.0").
+// Returns the crate version string (e.g. "0.3.0").
 //
 // pqc_kem_version: func() -> string;
 
@@ -283,6 +311,35 @@
 // Returns the primary algorithm identifier string (e.g. "X25519+ML-KEM-768").
 //
 // primary_algorithm: func() -> string;
+
+// -----------------------------------------------------------------------------
+// hybrid_encapsulate_bytes / hybrid_profile_id  (profile v1 byte encoding)
+// -----------------------------------------------------------------------------
+//
+// Encapsulate to a hybrid public key given as canonical bytes (1216, from
+// WasmHybridKemKeypair.public_key_bytes()). Returns a JSON string:
+//   { "ciphertext_bytes": "<base64url, 1120 bytes>",
+//     "shared_secret":    "<base64url, 32 bytes>" }   // KEEP SECRET
+//
+// hybrid_encapsulate_bytes: func(recipient_public_key_bytes: Uint8Array) -> result<string, error>;
+//
+// The named profile identifier, "HybridKem-X25519-MLKEM768-v1".
+//
+// hybrid_profile_id: func() -> string;
+
+// -----------------------------------------------------------------------------
+// aead_seal_hybrid / aead_seal_ml_kem_768  (aead-wrap)
+// -----------------------------------------------------------------------------
+//
+// Seal a payload to a KEM public key: KEM shared secret -> HKDF-SHA256 ->
+// XChaCha20-Poly1305. XChaCha20-Poly1305 is the only suite offered from
+// JavaScript, so nonces are generated inside the library and never become
+// the caller's problem. `context` separates protocols; `aad` is
+// authenticated but not encrypted. Both must be passed again to open.
+// Returns the sealed box as a JSON string.
+//
+// aead_seal_hybrid: func(recipient_public_key_json: string, context: Uint8Array, aad: Uint8Array, plaintext: Uint8Array) -> result<string, error>;
+// aead_seal_ml_kem_768: func(recipient_public_key_bytes: Uint8Array, context: Uint8Array, aad: Uint8Array, plaintext: Uint8Array) -> result<string, error>;
 
 // =============================================================================
 // ALGORITHM PARAMETER REFERENCE
@@ -359,7 +416,7 @@
 //
 // ─── Utility ─────────────────────────────────────────────────────────────────
 //
-// console.log(pqc_kem_version());    // e.g. "0.1.0"
+// console.log(pqc_kem_version());    // e.g. "0.3.0"
 // console.log(primary_algorithm());  // e.g. "X25519+ML-KEM-768"
 //
 // =============================================================================

@@ -1,14 +1,49 @@
 [package]
 name        = "pqc-kem"
-version     = "0.2.0"
+version     = "0.3.0"
 edition     = "2021"
 rust-version = "1.85"
 authors     = ["Kenneth Harper"]
-description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203), HQC, BIKE, McEliece — no_std library, WASM-target-compatible"
+description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203) and the X25519+ML-KEM-768 hybrid; optional native-only HQC via liboqs — no_std library, WASM-compatible"
 license     = "MIT OR Apache-2.0"
 repository  = "https://github.com/0x307/pqc-kem"
 keywords    = ["post-quantum", "kem", "ml-kem", "wasm", "cryptography"]
 categories  = ["cryptography", "wasm"]
+
+# What ships to crates.io, as an allowlist rather than cargo's default of
+# "every tracked file".
+#
+# The default publishes whatever happens to be committed, which on the way to
+# 0.3.0 came to include a dozen scratch files at the repository root. An
+# allowlist turns the next stray file into a non-event: it is simply not
+# listed.
+#
+# Test sources, vector data and the lockfile are here because CI builds and
+# tests the *packaged* crate, not the checkout, and the KATs read their
+# vectors from `tests/vectors/`. Deliberately not `tests/**`: that would also
+# ship the vector-regeneration script and the wasm-pack test, maintainer
+# tools that are useless inside a crate and that have carried
+# workstation-specific paths before. Nested packages (`pqc-kem-wasm/`,
+# `tests/downstream-consumer-fixture/`) are excluded by cargo automatically
+# regardless of what this list says.
+include = [
+    "/src/**",
+    "/tests/*.rs",
+    "/tests/vectors/**/*.json",
+    "/tests/vectors/README.md",
+    "/benches/**",
+    "/wit/**",
+    "/docs/hybrid-profiles.md",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/BENCHMARKS.md",
+    "/SECURITY.md",
+    "/STABILITY.md",
+    "/LICENSE-APACHE",
+    "/LICENSE-MIT",
+]
 
 [lib]
 name       = "pqc_kem"
@@ -18,23 +53,46 @@ crate-type = ["rlib"]
 
 [dependencies]
 # NIST FIPS 203 — ML-KEM-512/768/1024 (pure Rust, audited, no_std)
-ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
+#
+# `zeroize` feature (A-Z1, 0.3.0): ml-kem 0.3.2 gates a real `Drop` impl for
+# `DecapsulationKey<P>` behind this feature (it zeroizes the seed (`d`), the
+# implicit-rejection value (`z`), and the expanded decryption key on drop —
+# see `decapsulation_key.rs` upstream). Without it, ML-KEM secret key
+# material was never zeroized. `alloc` was already enabled (required either
+# way for this crate's `Vec<u8>`-based wire types).
+ml-kem = { version = "0.3", default-features = false, features = ["alloc", "zeroize"] }
 
 # Classical hybrid component — X25519 (pure Rust, no_std)
-x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+#
+# `zeroize` feature (A-Z1, 0.3.0): without it, `x25519-dalek`'s `zeroize`
+# dependency is not pulled in at all, so `StaticSecret`/`EphemeralSecret`
+# carried no `Drop` impl and were never zeroized on drop. `default-features
+# = false` is preserved — `zeroize` is additive, not a default-feature
+# dependency, and stays `no_std`-compatible (it does not require `alloc`).
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets", "zeroize"] }
 
 # KDF — HKDF-SHA256 for hybrid shared secret derivation (pure Rust, no_std)
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
-sha3 = { version = "0.10", default-features = false }
 
-# Symmetric encryption post-KEM (pure Rust, no_std)
-aes-gcm          = { version = "0.10", default-features = false, features = ["aes"] }
-chacha20poly1305 = { version = "0.10", default-features = false }
+# SHA3-256 / SHAKE-256 for the X-Wing (HybridKem-X25519-MLKEM768-v2) combiner
+# and decapsulation-key expansion (WP5/K-5, docs/hybrid-profiles.md). Pure
+# Rust, no_std-compatible (RustCrypto, same `digest` trait family already in
+# this graph via `sha2`/`hkdf`). `digest` is depended on directly (not just
+# transitively through `sha3`) so `xwing.rs` can name its
+# `Update`/`ExtendableOutput`/`XofReader`/`Digest` traits explicitly.
+sha3 = { version = "0.10", default-features = false }
+digest = { version = "0.10", default-features = false }
+
+# Symmetric encryption post-KEM (pure Rust, no_std), used only by the opt-in
+# `aead-wrap` feature (src/aead_wrap.rs). Optional since that module landed:
+# before it, this was a non-optional dependency nothing called, compiled
+# into every build. `alloc` stays off; aead_wrap uses the in-place detached
+# API, which needs no allocator feature.
+chacha20poly1305 = { version = "0.10", default-features = false, optional = true }
 
 # Encoding — no_std compatible
 base64ct = { version = "1", default-features = false, features = ["alloc"] }
-hex      = { version = "0.4", default-features = false, features = ["alloc"] }
 
 # Multibase encoding for DID Documents (bs58)
 bs58 = { version = "0.5", default-features = false, features = ["alloc"] }
@@ -49,11 +107,13 @@ serde_json = { version = "1", default-features = false, features = ["alloc"] }
 # Error handling — no_std compatible
 thiserror = { version = "2", default-features = false }
 
-# Zeroize secret key material on drop
-zeroize = { version = "1", default-features = false, features = ["derive"] }
-
-# Constant-time comparison
-subtle = { version = "2", default-features = false }
+# Zeroize secret key material on drop. `alloc` is enabled explicitly
+# (rather than relying on feature unification from other dependencies in
+# the graph) so `Vec<u8>: Zeroize`/`ZeroizeOnDrop` (used by `KemSecretKey`,
+# `SharedSecret`, and the `hqc`-feature keypair types) is guaranteed
+# available under every feature combination this crate supports, including
+# `--no-default-features` (no_std + alloc).
+zeroize = { version = "1", default-features = false, features = ["derive", "alloc"] }
 
 # Optional: HQC (NIST 2025 standard) — real implementation via `liboqs`.
 #
@@ -80,21 +140,12 @@ subtle = { version = "2", default-features = false }
 # sources -- verified NOT to require OpenSSL when scoped this narrowly.
 oqs = { version = "0.11", default-features = false, features = ["hqc", "std"], optional = true }
 
-# Optional: Classic McEliece (NIST Round 4 alternate) — NOT YET IMPLEMENTED, will emit compile_error!
-# pqcrypto-classicmceliece's published API does not match this crate's calls
-# against mceliece348864; dep kept for when a real implementation lands.
-# (Out of scope for the HQC/FN-DSA pass — untouched; `pqcrypto-traits` is
-# still needed here even though `hqc` moved off the pqcrypto-* family.)
-pqcrypto-classicmceliece = { version = "0.2", optional = true }
-pqcrypto-traits           = { version = "0.3", optional = true }
-
 [features]
 default = ["std"]
 
 # std: enables std-dependent trait impls
 std = [
     "sha2/std",
-    "sha3/std",
     "hkdf/std",
     "serde/std",
     "serde_json/std",
@@ -106,21 +157,37 @@ std = [
 # Native targets only (C FFI); not wasm32-unknown-unknown compatible.
 hqc = ["dep:oqs"]
 
-# bike: BIKE — NOT YET IMPLEMENTED, will emit compile_error! (no dep needed)
-bike = []
+# kat: deterministic, testing/interop-only entry points needed to check this
+# crate's ML-KEM output against published Known-Answer-Test vectors (X-4/P1,
+# see tests/vectors/README.md).
+# Adds a handful of extra methods to MlKem{512,768,1024}Keypair
+# (from_seed_halves, encapsulate_deterministic,
+# from_expanded_decapsulation_key_bytes, to_expanded_decapsulation_key_bytes)
+# and one free function (fips203::hybrid::x25519_kat). All are rustdoc'd as
+# testing/interop only and MUST NOT be used for production key generation or
+# key exchange. Adds no new dependencies (reuses `ml-kem`'s and
+# `x25519-dalek`'s existing public API); no_std/alloc-compatible.
+kat = []
 
-# mceliece: Classic McEliece — NOT YET IMPLEMENTED, will emit compile_error!
-mceliece = ["dep:pqcrypto-classicmceliece", "dep:pqcrypto-traits"]
+# aead-wrap: KEM shared secret -> HKDF-SHA256 -> XChaCha20-Poly1305 or
+# ChaCha20-Poly1305, as seal/open functions and a public derive_aead_key.
+# Non-default and additive; no_std-compatible. See src/aead_wrap.rs.
+aead-wrap = ["dep:chacha20poly1305"]
 
 # CRA-1: this crate is deliberately rlib-only now (see [lib] crate-type
 # above and src/lib.rs) -- a pure Rust/no_std library meant to be imported
 # into other builds, never built standalone on its own. There is no more
 # `wasm`-bindings surface or `standalone` feature here to document specially
 # for docs.rs: `hqc` can't build there regardless (native C toolchain/cmake/
-# libclang, unavailable in docs.rs's sandbox) and `bike`/`mceliece` still
-# fail to compile by design (P2-01). Default features are enough; no
-# [package.metadata.docs.rs] override needed. The WASM bindings that used to
-# live here moved to the sibling `pqc-kem-wasm` crate.
+# libclang, unavailable in docs.rs's sandbox). Default features are enough;
+# no [package.metadata.docs.rs] override needed. The WASM bindings that used
+# to live here moved to the sibling `pqc-kem-wasm` crate.
+#
+# 0.3.0: the `bike` and `mceliece` features (each a permanent
+# `compile_error!` stub — neither was ever implemented) were removed
+# entirely, along with their `src/bike`/`src/mceliece` modules and the
+# `pqcrypto-classicmceliece`/`pqcrypto-traits` dependencies. `--all-features`
+# now builds and tests cleanly. See CHANGELOG.md's 0.3.0 entry.
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # `ml-kem/getrandom` (enabled by our `std` feature) transitively pulls
@@ -135,6 +202,63 @@ getrandom = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 rand = "0.8"
 hex-literal = "0.4"
 
+# Used directly (not via this crate's own wrappers) by
+# tests/kat_hybrid_v1.rs's independent low-level recomputation of one hybrid
+# v1 vector — see docs/hybrid-profiles.md "Test-vector format and
+# provenance" and tests/vectors/README.md. Same versions/feature sets as the
+# equivalent normal dependencies above; adding them here too is additive
+# (cargo unifies the feature sets for the same package/target).
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
+hkdf = { version = "0.12", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+# criterion for benches/kem.rs. `default-features = false` drops the plotting
+# stack, which pulls a large tree in to render charts nothing here reads --
+# the numbers are turned into BENCHMARKS.md by scripts/bench-report.mjs,
+# from criterion's own JSON.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+# Feature-gated test targets are declared here with `required-features`
+# rather than gated by a `#![cfg(feature = ...)]` at the top of each file.
+#
+# The file-level form compiles to an empty binary when the feature is off,
+# and an empty test binary reports "ok. 0 passed" -- success, having checked
+# nothing. A default `cargo test` used to print five of those. With
+# `required-features`, cargo declines to build the target at all, so
+# nothing masquerades as a passing run, and asking for one explicitly
+# without its feature is an error rather than a silent no-op.
+[[test]]
+name = "kat_ml_kem"
+required-features = ["kat"]
+
+[[test]]
+name = "kat_x25519"
+required-features = ["kat"]
+
+[[test]]
+name = "kat_xwing"
+required-features = ["kat"]
+
+[[test]]
+name = "kat_hybrid_v1"
+required-features = ["kat"]
+
+[[test]]
+name = "hqc_tests"
+required-features = ["hqc"]
+
+[[test]]
+name = "aead_wrap_tests"
+required-features = ["aead-wrap"]
+
+# No `required-features` on the bench: a default `cargo bench` measures every
+# construction the crate ships by default -- ML-KEM and both hybrid profiles --
+# and benches/kem.rs adds HQC only when its feature is on.
+[[bench]]
+name = "kem"
+harness = false
+
 # `panic = "abort"` matters when THIS crate is the one being built directly
 # (root package) -- e.g. `cargo test --no-default-features`: the test
 # harness binary is a genuine final linked artifact, and core's unwind
@@ -147,3 +271,19 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+# Benchmarks inherit from [profile.release], which above sets only
+# `panic = "abort"` -- everything else would come from cargo's release
+# defaults, where `lto` is off and `codegen-units` is 16. Those are reasonable
+# defaults and bad benchmark settings: they leave cross-crate inlining on the
+# table, and they would silently change what these numbers mean if anyone
+# later edited [profile.release]. Pinned here so BENCHMARKS.md describes one
+# stated build configuration rather than whatever was inherited on the day.
+[profile.bench]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+# overflow-checks stays on deliberately. It costs some throughput, and the
+# figures are honest about being measured with it: a crypto library that
+# silently wraps on overflow in release is a worse trade than a few percent.
+overflow-checks = true

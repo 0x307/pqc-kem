@@ -19,7 +19,6 @@
 //! test would abort the whole test binary rather than being caught, per the
 //! same rationale already documented in `Cargo.toml`.
 
-#![cfg(feature = "hqc")]
 
 use pqc_kem::hqc::{Hqc128Keypair, Hqc192Keypair, Hqc256Keypair};
 use pqc_kem::types::KemAlgorithm;

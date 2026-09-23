@@ -2,29 +2,32 @@ name: cargo-deny
 
 # Dependency advisory / license / ban / source scanning (Linear 0X3-33 / P2-07).
 #
-# THIS WORKFLOW IS EXPECTED TO FAIL, AND THAT IS THE INTENDED STATE.
+# HISTORY (until 0.3.0): this workflow was EXPECTED TO FAIL. P1-06 ran
+# cargo-deny for real against this crate and the `advisories` check FAILED:
+# the PQClean project (upstream C implementations behind the `pqcrypto-*`
+# family) was being archived, so three transitively-reachable crates
+# (`pqcrypto-traits`, `pqcrypto-internals`, `pqcrypto-classicmceliece`),
+# reachable only through the non-default, never-implemented `mceliece`
+# feature, carried `unmaintained` advisories. Ed's recorded decision
+# (P1-06, 2026-08-24) was ACCEPT AND DOCUMENT, not suppress, with
+# `deny.toml`'s `advisories.ignore` left EMPTY on purpose.
 #
-# P1-06 ran cargo-deny for real against this crate and the `advisories` check
-# FAILED: the PQClean project (upstream C implementations behind the
-# `pqcrypto-*` family) is being archived, so four transitively-reachable
-# crates carry `unmaintained` advisories. Ed's recorded decision (P1-06,
-# 2026-08-24) is ACCEPT AND DOCUMENT, not suppress:
+# 0.3.0 (WP1, feature-surface hygiene) REMOVED the `mceliece` (and `bike`)
+# features/modules and their `pqcrypto-*` dependencies entirely -- see
+# CHANGELOG.md's 0.3.0 entry and SECURITY.md. Those three advisories are no
+# longer reachable in any configuration of this crate, so this workflow is
+# now expected to PASS ("hard-fail" -- a genuinely red run here means a
+# real, current problem, not an already-accepted historical one).
 #
-#   - `deny.toml`'s `advisories.ignore` stays EMPTY. Nothing is silently
-#     hidden from the tool.
-#   - Each accepted RUSTSEC ID is listed in SECURITY.md with its rationale.
-#   - A red run here is the standing, honest signal that those items are
-#     still open and still accepted -- and it is what will surface a
-#     GENUINELY NEW advisory landing on top of an already-accepted one.
+# This still lives in its own workflow file rather than in ci.yml so a
+# transient upstream advisory-database hiccup or a newly-filed advisory
+# doesn't couple to the main CI badge; it is not a "soft" or
+# continue-on-error check, and a failure here should be treated as a real
+# gate, not background noise.
 #
-# This lives in its own workflow file rather than in ci.yml (Ed, 2026-08-25)
-# precisely so this permanent, expected red does not drag the main CI badge
-# down on a public repo. "Non-blocking" here means SEPARATE FROM ci.yml AND
-# NOT A REQUIRED STATUS CHECK -- it does NOT mean the failure is hidden.
-#
-# Do not add `continue-on-error: true` to make this report green. Do not add
-# entries to `advisories.ignore`. Both destroy the exact signal P1-06 chose
-# to preserve.
+# Do not add `continue-on-error: true`. Do not add entries to
+# `advisories.ignore` to paper over a real finding -- record the decision
+# in SECURITY.md instead if something new needs to be accepted.
 
 on:
   push:
@@ -75,8 +78,9 @@ jobs:
           # not just in CI.
           arguments: --config deny.toml
 
-  # A failing advisory must do more than turn a run red -- especially here,
-  # where red is the steady state and therefore easy to stop noticing.
+  # A failing advisory must do more than turn a run red -- it needs a
+  # tracking issue so it doesn't get missed on a crate where a red run used
+  # to be the accepted steady state (pre-0.3.0; see header comment above).
   #
   # Excludes `pull_request`: a PR from a fork gets a read-only GITHUB_TOKEN, so
   # `issues: write` isn't grantable and this job would fail on permissions
@@ -124,11 +128,11 @@ jobs:
               `Check the run output for which category (advisories / bans / licenses /`,
               `sources) failed.`,
               ``,
-              `**Before treating this as new:** the four PQClean-derived \`unmaintained\``,
-              `advisories listed in [SECURITY.md](../blob/main/SECURITY.md#known-and-accepted-advisories)`,
-              `are already known and accepted (P1-06). This job fires on those too, by`,
-              `design. What matters is whether anything is failing *beyond* that list --`,
-              `a new RUSTSEC ID, a license, a ban, or a source.`,
+              `As of 0.3.0 this workflow is expected to be GREEN -- the` ,
+              `\`mceliece\`/\`bike\` features and their \`pqcrypto-*\` dependencies that`,
+              `previously caused three known/accepted advisories were removed entirely`,
+              `(see CHANGELOG.md's 0.3.0 entry). Treat any failure here as a real,`,
+              `current finding, not an already-accepted historical one.`,
               ``,
               `Record the decision -- resolved, accepted, or blocking -- in SECURITY.md.`,
             ].join("\n");

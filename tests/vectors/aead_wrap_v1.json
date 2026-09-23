@@ -1,0 +1,43 @@
+{
+  "description": "Known-answer vectors for pqc_kem::aead_wrap::derive_aead_key.",
+  "provenance": "Computed by an independent reference implementation of HKDF-SHA256 (RFC 5869), written against Python's standard hmac and hashlib and sharing no code with this crate; the reference is itself checked against RFC 5869 Appendix A.1 before any vector is produced. Generated once and frozen: a change to these values means the derivation changed, which requires a new label (AEAD_WRAP_INFO_V1 -> v2).",
+  "derivation": "HKDF-SHA256(ikm = ss, salt = none, info = \"pqc-kem-aead-wrap-v1\" || 0x00 || kem_algorithm || 0x00 || context), 32 bytes",
+  "encoding": "hex; context is hex so that it can hold arbitrary bytes, including NUL",
+  "vectors": [
+    {
+      "description": "ml-kem-768, empty context",
+      "ss": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "kem_algorithm": "ML-KEM-768",
+      "context": "",
+      "key": "59c01609445b4f57e59f2787ec954162804ea7834dba2f4bafc553ebba5d461a"
+    },
+    {
+      "description": "ml-kem-768, ascii context",
+      "ss": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "kem_algorithm": "ML-KEM-768",
+      "context": "746573742d636f6e74657874",
+      "key": "7cbbb992610fee494f1f71b5e13929fc752d1c79864de1befdf8fee0a44aec14"
+    },
+    {
+      "description": "hybrid, same ss and context",
+      "ss": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "kem_algorithm": "X25519+ML-KEM-768",
+      "context": "746573742d636f6e74657874",
+      "key": "88cff133de98534e4e21c201f1983a3d61ab1d2377908b481f4ce2f155e22f2d"
+    },
+    {
+      "description": "context containing a NUL byte",
+      "ss": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "kem_algorithm": "ML-KEM-768",
+      "context": "610062",
+      "key": "bd1594bc8a12ecc3dfe112d5e0ddeff1a58dffd383b032eaa6498f596d6b3ec5"
+    },
+    {
+      "description": "long context",
+      "ss": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "kem_algorithm": "X25519+ML-KEM-768",
+      "context": "787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878",
+      "key": "0027e3aa258beb818b4764bf97a3300f9bb4c11c5bb815ce2107928d62ab1e94"
+    }
+  ]
+}
