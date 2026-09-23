@@ -207,6 +207,12 @@ ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 
+# criterion for benches/kem.rs. `default-features = false` drops the plotting
+# stack, which pulls a large tree in to render charts nothing here reads --
+# the numbers are turned into BENCHMARKS.md by scripts/bench-report.mjs,
+# from criterion's own JSON.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
 # Feature-gated test targets are declared here with `required-features`
 # rather than gated by a `#![cfg(feature = ...)]` at the top of each file.
 #
@@ -236,6 +242,13 @@ required-features = ["kat"]
 name = "hqc_tests"
 required-features = ["hqc"]
 
+# No `required-features` on the bench: a default `cargo bench` measures every
+# construction the crate ships by default -- ML-KEM and both hybrid profiles --
+# and benches/kem.rs adds HQC only when its feature is on.
+[[bench]]
+name = "kem"
+harness = false
+
 # `panic = "abort"` matters when THIS crate is the one being built directly
 # (root package) -- e.g. `cargo test --no-default-features`: the test
 # harness binary is a genuine final linked artifact, and core's unwind
@@ -248,3 +261,19 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+# Benchmarks inherit from [profile.release], which above sets only
+# `panic = "abort"` -- everything else would come from cargo's release
+# defaults, where `lto` is off and `codegen-units` is 16. Those are reasonable
+# defaults and bad benchmark settings: they leave cross-crate inlining on the
+# table, and they would silently change what these numbers mean if anyone
+# later edited [profile.release]. Pinned here so BENCHMARKS.md describes one
+# stated build configuration rather than whatever was inherited on the day.
+[profile.bench]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+# overflow-checks stays on deliberately. It costs some throughput, and the
+# figures are honest about being measured with it: a crypto library that
+# silently wraps on overflow in release is a worse trade than a few percent.
+overflow-checks = true
