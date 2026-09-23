@@ -10,6 +10,41 @@ repository  = "https://github.com/0x307/pqc-kem"
 keywords    = ["post-quantum", "kem", "ml-kem", "wasm", "cryptography"]
 categories  = ["cryptography", "wasm"]
 
+# What ships to crates.io, as an allowlist rather than cargo's default of
+# "every tracked file".
+#
+# The default publishes whatever happens to be committed, which on the way to
+# 0.3.0 came to include a dozen scratch files at the repository root. An
+# allowlist turns the next stray file into a non-event: it is simply not
+# listed.
+#
+# Test sources, vector data and the lockfile are here because CI builds and
+# tests the *packaged* crate, not the checkout, and the KATs read their
+# vectors from `tests/vectors/`. Deliberately not `tests/**`: that would also
+# ship the vector-regeneration script and the wasm-pack test, maintainer
+# tools that are useless inside a crate and that have carried
+# workstation-specific paths before. Nested packages (`pqc-kem-wasm/`,
+# `tests/downstream-consumer-fixture/`) are excluded by cargo automatically
+# regardless of what this list says.
+include = [
+    "/src/**",
+    "/tests/*.rs",
+    "/tests/vectors/**/*.json",
+    "/tests/vectors/README.md",
+    "/benches/**",
+    "/wit/**",
+    "/docs/hybrid-profiles.md",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/BENCHMARKS.md",
+    "/SECURITY.md",
+    "/STABILITY.md",
+    "/LICENSE-APACHE",
+    "/LICENSE-MIT",
+]
+
 [lib]
 name       = "pqc_kem"
 crate-type = ["rlib"]

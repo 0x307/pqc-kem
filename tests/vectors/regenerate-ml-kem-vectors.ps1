@@ -10,8 +10,21 @@ function Write-Utf8NoBom([string]$path, [string]$content) {
     [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
 }
 
-$keygenSrc = 'C:\Users\kharper\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\oqs-sys-0.11.0+liboqs-0.13.0\liboqs\tests\ACVP_Vectors\ML-KEM-keyGen-FIPS203\internalProjection.json'
-$encdecSrc = 'C:\Users\kharper\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\oqs-sys-0.11.0+liboqs-0.13.0\liboqs\tests\ACVP_Vectors\ML-KEM-encapDecap-FIPS203\internalProjection.json'
+# Locate liboqs's vendored ACVP vectors inside whichever cargo registry this
+# machine uses, instead of a path that only existed on one workstation. The
+# registry index directory name is a hash that differs between machines, so
+# it is globbed rather than spelled out.
+$cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $HOME '.cargo' }
+$acvpRoot = Get-ChildItem -Path (Join-Path $cargoHome 'registry\src') -Directory |
+    ForEach-Object { Join-Path $_.FullName 'oqs-sys-0.11.0+liboqs-0.13.0\liboqs\tests\ACVP_Vectors' } |
+    Where-Object { Test-Path $_ } |
+    Select-Object -First 1
+if (-not $acvpRoot) {
+    throw "oqs-sys 0.11.0 not found under $cargoHome\registry\src. Run 'cargo fetch' with the hqc feature enabled first."
+}
+
+$keygenSrc = Join-Path $acvpRoot 'ML-KEM-keyGen-FIPS203\internalProjection.json'
+$encdecSrc = Join-Path $acvpRoot 'ML-KEM-encapDecap-FIPS203\internalProjection.json'
 
 $keygenJson = Get-Content $keygenSrc -Raw | ConvertFrom-Json
 $encdecJson = Get-Content $encdecSrc -Raw | ConvertFrom-Json
