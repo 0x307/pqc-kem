@@ -1,8 +1,10 @@
 ## pqc-kem v0.3.0 (Unreleased)
 
-This release combines three work packages: **WP1** (feature-surface hygiene — K-1, K-3,
-unused dependencies), **WP2** (secret-material zeroization hardening — A-Z1), and **WP3**
-(docs truthfulness, WASM target matrix, WIT header, CI coverage — X-3, X-5, K-2, A-D1). Full
+This release combines five work packages: **WP1** (feature-surface hygiene — K-1, K-3,
+unused dependencies), **WP2** (secret-material zeroization hardening — A-Z1), **WP3**
+(docs truthfulness, WASM target matrix, WIT header, CI coverage — X-3, X-5, K-2, A-D1),
+**WP4** (Known-Answer Tests — X-4) and **WP5** (named hybrid profiles and X-Wing — K-5),
+plus pre-release hardening. The X25519+ML-KEM-768 hybrid remains `PRIMARY_ALGORITHM`. Full
 details for every change are in [`CHANGELOG.md`](./CHANGELOG.md)'s `[0.3.0] - Unreleased`
 entry; this page is a reader-facing summary of it, not a separate source of truth.
 
@@ -40,6 +42,19 @@ entry; this page is a reader-facing summary of it, not a separate source of trut
   7748 §5.2/§6.1 vectors. Vector files live under `tests/vectors/` (shipped in the published
   package) with full provenance in `tests/vectors/README.md`. New CI job
   `kat-feature-build-test`.
+- **Added — named hybrid profiles and X-Wing (WP5, K-5):** the existing hybrid is now the
+  named profile `HybridKem-X25519-MLKEM768-v1`, byte-for-byte unchanged and still
+  `PRIMARY_ALGORITHM`. X-Wing (`draft-connolly-cfrg-xwing-kem-10`) arrives as profile v2
+  through a new `XWingKeypair`, checked against the three vectors published by the draft's
+  authors and recommended for new deployments. Canonical byte encodings for the hybrid's
+  public key and ciphertext. Specification in `docs/hybrid-profiles.md`. X-Wing is not yet
+  exposed to JavaScript through `pqc-kem-wasm`.
+- **Added — benchmarks:** `benches/kem.rs` covers every construction the crate ships, and
+  `scripts/bench-report.mjs` turns a criterion run into `BENCHMARKS.md`, with both hybrid
+  profiles compared against ML-KEM-768 and against each other.
+- **Changed — pre-release hardening:** what ships to crates.io is now an allowlist
+  (`include`), so stray files can't reach the package. Feature-only test targets use
+  `required-features`, so a default `cargo test` no longer prints empty binaries as passes.
 
 ### Algorithms (unchanged from 0.2.0, HQC status corrected in prose only)
 
@@ -57,16 +72,18 @@ below.
 ### Test counts (re-verified for this release)
 
 ```
-cargo test                     # 99 tests + 3 doctests (default features)
-cargo test --no-default-features  # same 99 tests + 3 doctests
+cargo test                     # 119 tests + 3 doctests (default features)
+cargo test --no-default-features  # same 119 tests + 3 doctests
 cargo test --features hqc      # adds tests/hqc_tests.rs (16 tests) + 3 HQC zeroize checks
                                 # (verified in CI on ubuntu-latest; the oqs-sys/bindgen build
                                 # step for this feature does not currently succeed on Windows
                                 # — a pre-existing, unrelated local limitation)
-cargo test --features kat      # adds tests/kat_ml_kem.rs (12 tests, 90 vector cases across
-                                # keyGen/encap/decap x 3 parameter sets) + tests/kat_x25519.rs
-                                # (3 run + 1 --ignored, 6 RFC 7748 vectors); same counts with
-                                # --no-default-features (kat is no_std/alloc-compatible)
+cargo test --features kat      # 137 tests + 3 doctests, 1 ignored. Adds tests/kat_ml_kem.rs
+                                # (12 tests, 90 vector cases across keyGen/encap/decap x 3
+                                # parameter sets), tests/kat_x25519.rs (3 run + 1 --ignored,
+                                # 6 RFC 7748 vectors), tests/kat_xwing.rs (1 test, 3 draft
+                                # vectors) and tests/kat_hybrid_v1.rs (2 tests); same counts
+                                # with --no-default-features (kat is no_std/alloc-compatible)
 ```
 
 ### Migration from 0.2.x
