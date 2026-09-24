@@ -1,14 +1,16 @@
 [package]
 name        = "pqc-kem"
-version     = "0.3.0"
+version     = "0.3.1"
 edition     = "2021"
 rust-version = "1.85"
 authors     = ["Kenneth Harper"]
-description = "Post-quantum Key Encapsulation Mechanisms: ML-KEM (FIPS 203) and the X25519+ML-KEM-768 hybrid; optional native-only HQC via liboqs — no_std library, WASM-compatible"
+description = "Post-quantum key encapsulation for Rust and WASM: ML-KEM (FIPS 203), the X25519 + ML-KEM-768 hybrid (default) and X-Wing, plus sealed boxes that encrypt straight to a public key. no_std; optional native-only HQC via liboqs."
 license     = "MIT OR Apache-2.0"
 repository  = "https://github.com/0x307/pqc-kem"
+homepage = "https://0x307.com/crates"
+documentation = "https://docs.rs/pqc-kem"
 keywords    = ["post-quantum", "kem", "ml-kem", "wasm", "cryptography"]
-categories  = ["cryptography", "wasm"]
+categories  = ["cryptography", "wasm", "no-std"]
 
 # What ships to crates.io, as an allowlist rather than cargo's default of
 # "every tracked file".

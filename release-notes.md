@@ -1,11 +1,11 @@
-## pqc-kem v0.3.0 (Unreleased)
+## pqc-kem v0.3.0 (2026-09-23)
 
 This release combines five work packages: **WP1** (feature-surface hygiene — K-1, K-3,
 unused dependencies), **WP2** (secret-material zeroization hardening — A-Z1), **WP3**
 (docs truthfulness, WASM target matrix, WIT header, CI coverage — X-3, X-5, K-2, A-D1),
 **WP4** (Known-Answer Tests — X-4), **WP5** (named hybrid profiles and X-Wing — K-5) and
 **WP6** (`aead-wrap` sealed boxes and WASM parity), plus pre-release hardening. The X25519+ML-KEM-768 hybrid remains `PRIMARY_ALGORITHM`. Full
-details for every change are in [`CHANGELOG.md`](./CHANGELOG.md)'s `[0.3.0] - Unreleased`
+details for every change are in [`CHANGELOG.md`](./CHANGELOG.md)'s `[0.3.0]`
 entry; this page is a reader-facing summary of it, not a separate source of truth.
 
 ### Highlights
