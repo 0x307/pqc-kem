@@ -1,4 +1,4 @@
-//! `aead-wrap`: from a KEM shared secret to a sealed payload, in one audited
+//! `aead-wrap`: from a KEM shared secret to a sealed payload, in one auditable
 //! path.
 //!
 //! A KEM produces a 32-byte shared secret, not an encryption. Every consumer
