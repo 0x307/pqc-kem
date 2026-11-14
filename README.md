@@ -1,6 +1,6 @@
 # pqc-kem
 
-> **Tier:** Production · **MSRV:** 1.85 · **License:** MIT OR Apache-2.0 · Not independently audited, see [the crate family](#the-0x307-crate-family)
+> **Tier:** Production · **MSRV:** 1.87 · **License:** MIT OR Apache-2.0 · Not independently audited, see [the crate family](#the-0x307-crate-family)
 
 [![CI](https://github.com/0x307/pqc-kem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/0x307/pqc-kem/actions/workflows/ci.yml)
 [![cargo-deny](https://github.com/0x307/pqc-kem/actions/workflows/cargo-deny.yml/badge.svg?branch=main)](https://github.com/0x307/pqc-kem/actions/workflows/cargo-deny.yml)
@@ -845,7 +845,7 @@ This forbids `unsafe` in this crate's source only; it does not (and cannot) reac
 
 ### Prerequisites
 
-- Rust 1.85+ (MSRV, enforced in CI; `rustup update stable`)
+- Rust 1.87+ (MSRV, enforced in CI; `rustup update stable`)
 - `wasm-pack` for WASM builds: `cargo install wasm-pack`
 - `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
 
@@ -908,7 +908,7 @@ Thirteen jobs (four added in 0.3.0's WP3 pass — `no-std-build`, `clippy-and-do
 `no_std` claim, lint/doc hygiene, and the WASM JS API test unenforced by CI):
 
 - **Default features (build + test)** — `cargo build` / `cargo test` with default features. This is the crate's supported surface and must always pass. This job also records the clone-to-green time (fresh checkout → passing tests) in the workflow run summary.
-- **MSRV (Rust 1.85.0, build + test)** — `cargo build` / `cargo test` with default features, pinned to exactly the `rust-version` declared in `Cargo.toml` (not `stable`). Fails if any future change relies on a Rust feature newer than the declared MSRV.
+- **MSRV (Rust 1.87.0, build + test)** — `cargo build` / `cargo test` with default features, pinned to exactly the `rust-version` declared in `Cargo.toml` (not `stable`). Fails if any future change relies on a Rust feature newer than the declared MSRV.
 - **`pqc-kem-wasm` (wasm32 cdylib artifact)** — builds the actual advertised standalone WASM artifact (the sibling `pqc-kem-wasm` crate; see [Crate layout](#crate-layout)) for `wasm32-unknown-unknown`. This is the exact invocation `build.ps1`/`build-wasm.ps1` run, minus wasm-pack's JS/TS glue generation.
 - **Downstream consumer (no_std + external std leak, wasm32)** — builds `tests/downstream-consumer-fixture/`, a minimal separate crate that depends on `pqc-kem` as an ordinary no_std library while independently linking `std` via an unrelated dependency, targeting `wasm32-unknown-unknown`. This is the actual regression test for `CRA-1` — the defect it catches (a library crate wrongly claiming process-wide lang items) is only observable from a consumer's build graph, never from building `pqc-kem` on its own.
 - **`hqc` feature (build + test)** — `cargo build`/`cargo test --features hqc`, on a runner with a C toolchain, `cmake`, and `libclang` available (verified not to additionally need OpenSSL for `hqc` alone). This is real, working functionality now, not a stub — must always pass. Also runs `cargo doc --no-deps --features hqc` with `-D warnings` (the only runner in this workflow that can build the `hqc`-gated doc items at all).

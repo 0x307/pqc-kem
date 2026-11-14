@@ -69,19 +69,21 @@ jobs:
   # Builds against the exact MSRV declared in Cargo.toml's `rust-version`
   # (P2-09 / Linear 0X3-35). Determined empirically, not guessed: Rust 1.84.0
   # fails outright (block-buffer v0.12.1 requires the `edition2024` Cargo
-  # feature, stabilized in 1.85), while 1.85.0 builds and tests cleanly. This
+  # feature, stabilized in 1.85), while 1.85.0 builds and tests cleanly.
+  # Raised to 1.87 in 0.3.2: ctutils 0.4.4, the fix for RUSTSEC-2026-0385
+  # (reached through hybrid-array and ml-kem), requires rustc 1.87. This
   # job pins the toolchain to exactly that version -- not `stable` -- so it
   # goes red the moment a future change (this crate's code or a dependency
   # bump) relies on anything newer than the declared MSRV.
   msrv-build-test:
-    name: MSRV (Rust 1.85.0, build + test)
+    name: MSRV (Rust 1.87.0, build + test)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (fresh clone, no cache)
         uses: actions/checkout@v4
 
-      - name: Install Rust 1.85.0 (exact MSRV toolchain, fresh, no cache)
-        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install Rust 1.87.0 (exact MSRV toolchain, fresh, no cache)
+        uses: dtolnay/rust-toolchain@1.87.0
 
       - name: cargo build (default features, MSRV toolchain)
         run: cargo build --locked --verbose

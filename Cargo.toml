@@ -2,7 +2,7 @@
 name        = "pqc-kem"
 version     = "0.3.2"
 edition     = "2021"
-rust-version = "1.85"
+rust-version = "1.87"
 authors     = ["Kenneth Harper"]
 description = "Post-quantum key encapsulation for Rust and WASM: ML-KEM (FIPS 203), the X25519 + ML-KEM-768 hybrid (default) and X-Wing, plus sealed boxes that encrypt straight to a public key. no_std; optional native-only HQC via liboqs."
 license     = "MIT OR Apache-2.0"

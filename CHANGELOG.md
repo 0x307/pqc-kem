@@ -12,7 +12,18 @@ document for what counts as breaking inside `0.x`.
 A patch release. No API break, and no change to the bytes of any valid exchange: every frozen
 ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
 
+Two changes use the new security exception in [`STABILITY.md`](./STABILITY.md) §2, because each
+would otherwise need a minor release: **the MSRV rises from 1.85 to 1.87**, and **hybrid v1 now
+refuses low-order X25519 keys** (an input that used to succeed now fails). Both are below.
+
 ### Changed
+
+- **MSRV raised from 1.85 to 1.87** (security exception). `ctutils` 0.4.4, the fix for
+  RUSTSEC-2026-0385 (non-constant-time mask generation and `u128` comparisons, reached through
+  `hybrid-array` and `ml-kem`), requires rustc 1.87. Keeping 1.85 would have left every user on
+  1.85 or 1.86 resolving the vulnerable `ctutils` 0.4.2 with no warning. With the MSRV at 1.87
+  they get a clear compiler error and an upgrade, not a silent constant-time defect. pqc-sig and
+  aethel-auth already require 1.87.
 
 - **Hybrid v1 refuses an all-zero X25519 shared secret** (KEM-03). A low-order X25519 point,
   as the recipient's public key or as the ephemeral key in a ciphertext, forces the X25519
@@ -21,7 +32,8 @@ ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
   and `decapsulate` returns `KemError::Decapsulation`, instead of a key. The check is constant
   time (x25519-dalek's `was_contributory`) and depends only on public input. RFC 7748 §6.1
   allows the abort. A caller that passed a low-order key used to get a key and now gets an
-  error; nothing else changes. X-Wing is unchanged, as its draft specifies.
+  error; nothing else changes. X-Wing is unchanged, as its draft specifies. This is the other use
+  of the security exception.
 
 ### Fixed
 
@@ -29,9 +41,7 @@ ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
   0.71, which breaks under clang 22. The README now gives the workaround (an older libclang via
   `LIBCLANG_PATH`), and CI runs the `hqc` and `--all-features` jobs on both 24.04 and 26.04
   that way. No code change; the fix proper needs an `oqs-sys` release with `bindgen` 0.72.1+.
-- **Lockfiles move `ctutils` 0.4.2 to 0.4.4** (RUSTSEC-2026-0385, reached through
-  `hybrid-array` and `ml-kem`). Lockfile only: consumers resolve their own, and a fresh resolve
-  already picks 0.4.4.
+- **Lockfiles move `ctutils` 0.4.2 to 0.4.4** (RUSTSEC-2026-0385). See the MSRV change above.
 
 ### Added
 
