@@ -279,3 +279,35 @@ fn sealing_to_a_key_of_the_wrong_algorithm_is_refused() {
     let err = seal_ml_kem_768(&mut OsRng, &pk, CTX, AAD, MSG).unwrap_err();
     assert!(matches!(err, KemError::InvalidKey(_)), "got {err:?}");
 }
+
+// ── wire format: no version tag (KEM-04, docs/aead-wrap-format.md) ──────────
+
+/// Pins the finding in docs/aead-wrap-format.md: a sealed box's only
+/// encoding is this JSON object, with exactly these five fields and no
+/// format or version field. If a field is ever added, this test fails and
+/// the doc has to be updated with it.
+#[test]
+fn sealed_box_json_has_exactly_five_fields_and_no_version() {
+    let kp = HybridKemKeypair::generate(&mut OsRng).unwrap();
+    let sealed = seal_hybrid(&mut OsRng, &kp.public_key(), CTX, AAD, MSG).unwrap();
+    let v: serde_json::Value = serde_json::to_value(&sealed).unwrap();
+    let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["ciphertext", "kem_algorithm", "kem_ct", "nonce", "suite"]);
+    assert_eq!(v["kem_algorithm"], "hybrid_x25519_ml_kem768");
+    assert_eq!(v["suite"], "xchacha20-poly1305");
+}
+
+/// The other half of the finding: a reader on this version ignores a field
+/// it doesn't know, so a `version` added later would be skipped, not
+/// refused, by 0.3.x. Control: the same box opens with and without it.
+#[test]
+fn sealed_box_reader_ignores_an_unknown_version_field() {
+    let kp = HybridKemKeypair::generate(&mut OsRng).unwrap();
+    let sealed = seal_hybrid(&mut OsRng, &kp.public_key(), CTX, AAD, MSG).unwrap();
+    let mut v: serde_json::Value = serde_json::to_value(&sealed).unwrap();
+    v.as_object_mut().unwrap().insert("version".into(), serde_json::json!(2));
+    let back: SealedBox = serde_json::from_value(v).expect("unknown field is ignored, not refused");
+    assert_eq!(back, sealed);
+    assert_eq!(open_hybrid(&kp, &back, CTX, AAD).unwrap().as_slice(), MSG);
+}

@@ -49,6 +49,13 @@
 //! - **No plaintext left behind.** Opened plaintext comes back as
 //!   [`Zeroizing`](zeroize::Zeroizing); working buffers are zeroized; [`AeadKey`](crate::aead_wrap::AeadKey) zeroizes on drop.
 //!
+//! # Wire format
+//!
+//! A [`SealedBox`](crate::aead_wrap::SealedBox) is a five-field JSON object
+//! and carries **no format or version tag**; the construction version lives
+//! only in the HKDF label [`AEAD_WRAP_INFO_V1`](crate::aead_wrap::AEAD_WRAP_INFO_V1).
+//! See `docs/aead-wrap-format.md`.
+//!
 //! Not for identity or wallet secrets: this seals data *to* a KEM public key.
 //! Anything whose security depends on purpose-separated keys belongs in a
 //! construction built for that.

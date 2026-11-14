@@ -36,6 +36,7 @@ include = [
     "/benches/**",
     "/wit/**",
     "/docs/hybrid-profiles.md",
+    "/docs/aead-wrap-format.md",
     "/Cargo.toml",
     "/Cargo.lock",
     "/README.md",
