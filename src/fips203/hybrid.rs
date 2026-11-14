@@ -11,6 +11,15 @@
 //! combined   = x25519_ss ‖ mlkem_ss          (64 bytes)
 //! shared_key = HKDF-SHA256(combined, info="pqc-kem-hybrid-v1", len=32)
 //! ```
+//!
+//! # Low-order X25519 points
+//! A low-order X25519 public key (in the recipient's key, or as the
+//! ephemeral key in a ciphertext) forces `x25519_ss` to all zeros whatever
+//! the secret scalar, which takes the classical half out of the combiner.
+//! Since 0.3.2, encapsulation and decapsulation check for that (in constant
+//! time) and return an error instead of a key, as RFC 7748 §6.1 allows. The
+//! check depends only on public input, so returning early leaks nothing.
+//! Every valid exchange produces the same bytes as before.
 
 extern crate alloc;
 use alloc::{format, vec::Vec};
@@ -31,6 +40,24 @@ use crate::types::{HybridKemCiphertext, HybridPublicKey, KemAlgorithm, KemSecret
 
 /// HKDF info string for the hybrid KEM construction.
 const HYBRID_KEM_INFO: &[u8] = b"pqc-kem-hybrid-v1";
+
+/// Refuse an all-zero X25519 shared secret (KEM-03): the other side's
+/// X25519 key was a low-order point. `was_contributory` compares against
+/// zero with `subtle::ConstantTimeEq` (via `curve25519-dalek`'s
+/// `IsIdentity`), so this check is constant time.
+fn require_contributory(
+    ss: &x25519_dalek::SharedSecret,
+    err: fn(alloc::string::String) -> KemError,
+    whose: &str,
+) -> KemResult<()> {
+    if ss.was_contributory() {
+        Ok(())
+    } else {
+        Err(err(format!(
+            "X25519 shared secret is all zeros ({whose} is a low-order point)"
+        )))
+    }
+}
 
 /// Hybrid X25519 + ML-KEM-768 keypair.
 ///
@@ -110,6 +137,9 @@ impl HybridKemKeypair {
     /// Returns `(ciphertext, shared_secret)` where:
     /// - `ciphertext` contains the X25519 ephemeral public key and ML-KEM-768 ciphertext
     /// - `shared_secret` is 32 bytes derived via HKDF-SHA256
+    ///
+    /// Returns [`KemError::Encapsulation`] if `recipient_x25519_pub` is a
+    /// low-order X25519 point (the X25519 shared secret would be all zeros).
     pub fn encapsulate<R: CryptoRng + RngCore>(
         rng: &mut R,
         recipient_x25519_pub: &[u8; 32],
@@ -121,6 +151,7 @@ impl HybridKemKeypair {
 
         let recipient_x25519 = X25519PublicKey::from(*recipient_x25519_pub);
         let x25519_ss = ephemeral_secret.diffie_hellman(&recipient_x25519);
+        require_contributory(&x25519_ss, KemError::Encapsulation, "recipient X25519 public key")?;
 
         // ── Step 2: ML-KEM-768 encapsulation ─────────────────────────────────
         let ek_key: ml_kem::kem::Key<EncapsulationKey<MlKem768>> = recipient_mlkem_pub.try_into()
@@ -174,6 +205,10 @@ impl HybridKemKeypair {
     }
 
     /// Decapsulate a hybrid ciphertext, recovering the shared secret.
+    ///
+    /// Returns [`KemError::Decapsulation`] if the ciphertext's X25519
+    /// ephemeral key is a low-order point (the X25519 shared secret would be
+    /// all zeros).
     pub fn decapsulate(&self, ciphertext: &HybridKemCiphertext) -> KemResult<SharedSecret> {
         // ── Step 1: Decode wire types ─────────────────────────────────────────
         let x25519_eph_bytes = ciphertext.x25519_bytes()?;
@@ -187,6 +222,7 @@ impl HybridKemKeypair {
         // ── Step 2: X25519 static DH ──────────────────────────────────────────
         let ephemeral_public = X25519PublicKey::from(*x25519_eph_arr);
         let x25519_ss = self.x25519_secret.diffie_hellman(&ephemeral_public);
+        require_contributory(&x25519_ss, KemError::Decapsulation, "ciphertext's X25519 ephemeral key")?;
 
         // ── Step 3: ML-KEM-768 decapsulation ─────────────────────────────────
         let ct: ml_kem::Ciphertext<MlKem768> = mlkem_ct_bytes.as_slice().try_into()
@@ -387,6 +423,7 @@ impl HybridKemKeypair {
             ))?;
         let recipient_x25519 = X25519PublicKey::from(x25519_arr);
         let x25519_ss = ephemeral_secret.diffie_hellman(&recipient_x25519);
+        require_contributory(&x25519_ss, KemError::Encapsulation, "recipient X25519 public key")?;
 
         // ── Step 2: ML-KEM-768 (deterministic encapsulation) ──────────────
         let mlkem_bytes = recipient_public_key.mlkem_bytes()?;
