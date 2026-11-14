@@ -344,6 +344,13 @@ await init();
 |--------------|---------|-----------------------------------------------------------------------------------------------|
 | `std`        | ✅ Yes  | Enables `std`-dependent trait impls (`sha2/std`, `serde/std`, `zeroize/std`, `ml-kem/getrandom`). Disable for `no_std` targets. |
 | `hqc`        | ❌ No   | Enables HQC-128/192/256 via `liboqs` (the `oqs` crate, C FFI). Not WASM-compatible. Requires a C toolchain, `cmake`, and `libclang` (for `bindgen`) — no OpenSSL required with this feature alone. |
+
+> **`hqc` with libclang 22 (Ubuntu 26.04 and newer):** the newest published `oqs-sys`
+> (0.11.0+liboqs-0.13.0) uses `bindgen` 0.71, which generates broken bindings under clang 22, so
+> the build stops with `attempt to compute 1_usize - 88_usize` in `OQS_SIG`'s layout check. Until an
+> `oqs-sys` release picks up `bindgen` 0.72.1 or newer, build with an older libclang, for example
+> `sudo apt-get install libclang-21-dev` and `LIBCLANG_PATH=/usr/lib/llvm-21/lib cargo build
+> --features hqc`. CI runs `hqc` on Ubuntu 24.04 and on 26.04 this way.
 | `aead-wrap`  | ❌ No   | Adds [`aead_wrap`](src/aead_wrap.rs): seal a payload to a KEM public key (KEM → HKDF-SHA256 → XChaCha20-Poly1305 or ChaCha20-Poly1305). One new dependency, `chacha20poly1305`, without its `alloc` feature. `no_std`/`alloc`- and WASM-compatible. See [Sealed boxes](#sealed-boxes-aead-wrap-feature). |
 | `kat`        | ❌ No   | Adds a handful of deterministic, **testing/interop-only** entry points (`MlKem{512,768,1024}Keypair::from_seed_halves`/`encapsulate_deterministic`/`from_expanded_decapsulation_key_bytes`/`to_expanded_decapsulation_key_bytes`, `fips203::hybrid::x25519_kat`) used by `tests/kat_ml_kem.rs` and `tests/kat_x25519.rs` to check this crate against published Known-Answer-Test vectors. `no_std`/`alloc`-compatible; adds no new dependencies. **Never use these for production key generation or key exchange.** See [Known-Answer Tests](#known-answer-tests) below. |
 

@@ -23,6 +23,13 @@ ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
   allows the abort. A caller that passed a low-order key used to get a key and now gets an
   error; nothing else changes. X-Wing is unchanged, as its draft specifies.
 
+### Fixed
+
+- **`hqc` on Ubuntu 26.04** (libclang 22). The newest `oqs-sys` release builds with `bindgen`
+  0.71, which breaks under clang 22. The README now gives the workaround (an older libclang via
+  `LIBCLANG_PATH`), and CI runs the `hqc` and `--all-features` jobs on both 24.04 and 26.04
+  that way. No code change; the fix proper needs an `oqs-sys` release with `bindgen` 0.72.1+.
+
 ### Added
 
 - **X-Wing interop test against an independent implementation** (KEM-01,
