@@ -215,6 +215,13 @@ ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 
+# An independent X-Wing implementation (RustCrypto), used only by
+# tests/xwing_interop.rs: it encapsulates to one of this crate's X-Wing
+# public keys and this crate must decapsulate the result to the same shared
+# secret (KEM-01). Dev-only, so it never reaches a consumer's build; it
+# brings its own x25519-dalek 3 / sha3 0.12, which is fine for a test.
+x-wing = { version = "=0.1.1", default-features = false, features = ["getrandom"] }
+
 # criterion for benches/kem.rs. `default-features = false` drops the plotting
 # stack, which pulls a large tree in to render charts nothing here reads --
 # the numbers are turned into BENCHMARKS.md by scripts/bench-report.mjs,

@@ -160,6 +160,10 @@ meanings and the exact byte layouts they check.
 
 ## `xwing/xwing.json` — X-Wing (hybrid profile v2) KAT vectors
 
+**Source, in one line:** `spec/test-vectors.json` from
+`dconnolly/draft-connolly-cfrg-xwing-kem`, as of draft revision
+**`draft-connolly-cfrg-xwing-kem-10`** (commit `9b6ce9e6`). Details follow.
+
 **Provenance:** all 3 vectors from
 **`draft-connolly-cfrg-xwing-kem-10`**'s (IETF CFRG; content dated
 2026-03-02, published 2026-09-03) own machine-readable test-vector file,
@@ -186,6 +190,21 @@ field meanings.
 `.bytes` must equal `ss`. All 3 vectors pass against this crate's native
 (not the `x-wing` RustCrypto crate) X-Wing implementation in
 `src/fips203/xwing.rs`.
+
+**Interop with an independent implementation (`tests/xwing_interop.rs`,
+default features, KEM-01):** RustCrypto's `x-wing` crate (`=0.1.1`, a
+dev-dependency only, so it never reaches a consumer's build) encapsulates to
+one of this crate's X-Wing public keys, and this crate's `decapsulate` must
+return the same shared secret: once with fixed inputs (a seed and `eseed`
+that aren't draft vectors) and 16 times with random ones. The reverse
+direction is checked too (this crate encapsulates, `x-wing` decapsulates),
+and both derive the same public key from one seed. Control: flipping one
+byte of `x-wing`'s ciphertext (in the ML-KEM part or in `ct_X`) makes the
+two secrets differ. What this does and doesn't cover: `x-wing` has its own
+key expansion, combiner, byte layout and X25519 (`x25519-dalek` 3, against
+this crate's 2), but its ML-KEM-768 half is the same RustCrypto `ml-kem`
+crate this crate uses, so ML-KEM itself is cross-checked by the NIST ACVP
+vectors above, not by this test.
 
 ## Regenerating / updating these vectors
 
