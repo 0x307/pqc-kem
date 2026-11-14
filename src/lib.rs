@@ -119,6 +119,10 @@ pub mod hqc;
 #[cfg(feature = "aead-wrap")]
 pub mod aead_wrap;
 
+// Doctest-only: proves a default build can't reach the `kat` entry points.
+#[cfg(doctest)]
+mod kat_gate_doctests;
+
 // ── Top-Level Re-exports ──────────────────────────────────────────────────────
 
 pub use error::{KemError, KemResult};

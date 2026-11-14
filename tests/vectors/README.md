@@ -25,6 +25,11 @@ entry points to `MlKem512Keypair`/`MlKem768Keypair`/`MlKem1024Keypair`
 exchange.** See `docs/hybrid-profiles.md` for the two hybrid profiles'
 (`-v1`/`-v2`) normative combiner/layout spec.
 
+A default build can't reach any of them: `src/kat_gate_doctests.rs` holds
+one `compile_fail` doctest per `kat`-only function, which must fail to
+compile without the feature and must compile and run with it
+(`cargo test --doc` and `cargo test --doc --features kat`; KEM-02).
+
 ## `ml-kem/{512,768,1024}/keygen.json` — FIPS 203 keyGen
 
 **Provenance:** NIST ACVP-Server `ML-KEM-keyGen-FIPS203` test vector set
