@@ -29,6 +29,9 @@ ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
   0.71, which breaks under clang 22. The README now gives the workaround (an older libclang via
   `LIBCLANG_PATH`), and CI runs the `hqc` and `--all-features` jobs on both 24.04 and 26.04
   that way. No code change; the fix proper needs an `oqs-sys` release with `bindgen` 0.72.1+.
+- **Lockfiles move `ctutils` 0.4.2 to 0.4.4** (RUSTSEC-2026-0385, reached through
+  `hybrid-array` and `ml-kem`). Lockfile only: consumers resolve their own, and a fresh resolve
+  already picks 0.4.4.
 
 ### Added
 

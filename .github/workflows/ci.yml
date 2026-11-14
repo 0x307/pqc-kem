@@ -14,6 +14,10 @@ on:
   push:
     branches: [main]
   pull_request:
+    # PRs into main only. A stacked PR's base is another feature branch, so
+    # the stack's story PRs don't run CI; the merge PR, opened against main
+    # and holding the whole stack, does.
+    branches: [main]
 
 # Private repo, metered Actions minutes. This dedupes two independent
 # sources of wasted runs: (1) pushing several times in a row leaves earlier,
