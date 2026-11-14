@@ -7,6 +7,46 @@ adheres to the breaking-change and deprecation rules in
 [`STABILITY.md`](./STABILITY.md) rather than strict SemVer prior to `1.0.0` — see that
 document for what counts as breaking inside `0.x`.
 
+## [0.3.2] - Unreleased
+
+A patch release. No API break, and no change to the bytes of any valid exchange: every frozen
+ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
+
+### Changed
+
+- **Hybrid v1 refuses an all-zero X25519 shared secret** (KEM-03). A low-order X25519 point,
+  as the recipient's public key or as the ephemeral key in a ciphertext, forces the X25519
+  half of the combiner to zero whatever the secret scalar. `HybridKemKeypair::encapsulate`,
+  `encapsulate_to` (and so `aead_wrap::seal_hybrid`) now return `KemError::Encapsulation`,
+  and `decapsulate` returns `KemError::Decapsulation`, instead of a key. The check is constant
+  time (x25519-dalek's `was_contributory`) and depends only on public input. RFC 7748 §6.1
+  allows the abort. A caller that passed a low-order key used to get a key and now gets an
+  error; nothing else changes. X-Wing is unchanged, as its draft specifies.
+
+### Added
+
+- **X-Wing interop test against an independent implementation** (KEM-01,
+  `tests/xwing_interop.rs`). RustCrypto's `x-wing` 0.1.1 (dev-dependency only) encapsulates to
+  this crate's X-Wing keys and this crate must decapsulate to the same secret, and the reverse.
+  One flipped ciphertext byte breaks the agreement (control). `tests/vectors/README.md` names
+  the X-Wing vectors' source in one line: `spec/test-vectors.json` from
+  `dconnolly/draft-connolly-cfrg-xwing-kem`, draft revision `-10`.
+- **Compile-fail doctests for the `kat` entry points** (KEM-02, `src/kat_gate_doctests.rs`,
+  doctest-only). Each of the 16 `kat`-only functions fails to compile without the feature, and
+  the same snippet compiles and runs with `--features kat` (control).
+- **`docs/aead-wrap-format.md`** (KEM-04): a sealed box carries no format or version tag. Its
+  only encoding is a five-field JSON object, and the construction version exists only in the
+  HKDF label. No tag is added here, as that would be a wire change; it is left for 0.4.0. Two
+  tests pin the finding.
+- **`supply-chain/audits.toml`**: cargo-vet audits of this crate's own published versions,
+  importable by consumers (see the file's header).
+
+### Documentation
+
+- The crate family section (README and crate docs) lists all nine crates with a tier and the
+  family line each one builds on. aethel-vault is now Lab, and the Lab definition reads "keep
+  them off a production identity or payment path".
+
 ## [0.3.1] - 2026-09-23
 
 Documentation and metadata only. No change to the API, the wire formats or behaviour.
