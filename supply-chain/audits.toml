@@ -1,0 +1,36 @@
+# cargo-vet audits for pqc-kem's own released versions (FAM-04).
+#
+# Written by hand in cargo-vet's audits.toml format (cargo vet was not
+# installed where this was prepared). It holds audits only; this repo does
+# not run `cargo vet` on its own dependencies yet, so there is no
+# config.toml or imports.lock beside it.
+#
+# To trust these audits from your own project, add to your
+# supply-chain/config.toml:
+#
+#   [imports.0x307-pqc-kem]
+#   url = "https://raw.githubusercontent.com/0x307/pqc-kem/main/supply-chain/audits.toml"
+#
+# What an entry means: the maintainer has reviewed that published version in
+# full (it is the maintainer's own code) against cargo-vet's built-in
+# criteria. It is not an independent third-party audit; see README.md
+# ("Audit and FIPS status"). A new entry is added when each version is
+# published. 0.1.0 is yanked and has no entry.
+
+[[audits.pqc-kem]]
+who = "Ed Johnson <165963846+eljay179@users.noreply.github.com>"
+criteria = "safe-to-run"
+version = "0.2.0"
+notes = "Maintainer's own release. safe-to-run, not safe-to-deploy: 0.2.0 did not zeroize ML-KEM or X25519 secrets on drop and shipped non-functional bike/mceliece feature stubs. Both fixed in 0.3.0. Use 0.3.x."
+
+[[audits.pqc-kem]]
+who = "Ed Johnson <165963846+eljay179@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = "Maintainer's own release. Pure Rust, #![forbid(unsafe_code)], no build script, no network or filesystem access. The optional hqc feature links liboqs through the oqs crate (C FFI)."
+
+[[audits.pqc-kem]]
+who = "Ed Johnson <165963846+eljay179@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.0 -> 0.3.1"
+notes = "Maintainer's own release. Docs, README and manifest changes only; no change to cryptographic code."
