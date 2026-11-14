@@ -177,3 +177,35 @@ fn independent_recomputation_of_first_vector() {
 
     assert_eq!(shared_key.to_vec(), expected_ss, "independent recomputation: shared secret mismatch");
 }
+
+/// KEM-03: the kat-only deterministic encapsulation refuses a low-order
+/// recipient X25519 key too (u = 0 and an order-8 point), while the first
+/// frozen vector's recipient key, with the same inputs, still produces the
+/// vector's bytes (control).
+#[test]
+fn encapsulate_deterministic_refuses_low_order_recipient_key() {
+    let v = &load_vectors()[0];
+    let keypair = HybridKemKeypair::from_secrets(
+        &hex_to_array32(&v.x25519_sk),
+        &hex_to_array32(&v.d),
+        &hex_to_array32(&v.z),
+    );
+    let mlkem_pub = keypair.mlkem_public_bytes();
+    let eph = hex_to_array32(&v.eph_x25519_sk);
+    let m = hex_to_array32(&v.m);
+
+    for point in [
+        [0u8; 32],
+        hex_to_array32("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
+    ] {
+        let low = pqc_kem::types::HybridPublicKey::new(&point, &mlkem_pub);
+        let err = HybridKemKeypair::encapsulate_deterministic(&low, &eph, &m)
+            .expect_err("low-order recipient key must be refused");
+        assert!(matches!(err, pqc_kem::KemError::Encapsulation(_)), "got {err:?}");
+    }
+
+    let (ct, ss) = HybridKemKeypair::encapsulate_deterministic(&keypair.public_key(), &eph, &m)
+        .expect("honest key still encapsulates");
+    assert_eq!(ct.to_bytes().unwrap(), hex_to_bytes(&v.ct));
+    assert_eq!(ss.bytes, hex_to_bytes(&v.ss));
+}

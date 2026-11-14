@@ -7,6 +7,66 @@ adheres to the breaking-change and deprecation rules in
 [`STABILITY.md`](./STABILITY.md) rather than strict SemVer prior to `1.0.0` — see that
 document for what counts as breaking inside `0.x`.
 
+## [0.3.2] - Unreleased
+
+A patch release. No API break, and no change to the bytes of any valid exchange: every frozen
+ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
+
+Two changes use the new security exception in [`STABILITY.md`](./STABILITY.md) §2, because each
+would otherwise need a minor release: **the MSRV rises from 1.85 to 1.87**, and **hybrid v1 now
+refuses low-order X25519 keys** (an input that used to succeed now fails). Both are below.
+
+### Changed
+
+- **MSRV raised from 1.85 to 1.87** (security exception). `ctutils` 0.4.4, the fix for
+  RUSTSEC-2026-0385 (non-constant-time mask generation and `u128` comparisons, reached through
+  `hybrid-array` and `ml-kem`), requires rustc 1.87. Keeping 1.85 would have left every user on
+  1.85 or 1.86 resolving the vulnerable `ctutils` 0.4.2 with no warning. With the MSRV at 1.87
+  they get a clear compiler error and an upgrade, not a silent constant-time defect. pqc-sig and
+  aethel-auth already require 1.87.
+
+- **Hybrid v1 refuses an all-zero X25519 shared secret** (KEM-03). A low-order X25519 point,
+  as the recipient's public key or as the ephemeral key in a ciphertext, forces the X25519
+  half of the combiner to zero whatever the secret scalar. `HybridKemKeypair::encapsulate`,
+  `encapsulate_to` (and so `aead_wrap::seal_hybrid`) now return `KemError::Encapsulation`,
+  and `decapsulate` returns `KemError::Decapsulation`, instead of a key. The check is constant
+  time (x25519-dalek's `was_contributory`) and depends only on public input. RFC 7748 §6.1
+  allows the abort. A caller that passed a low-order key used to get a key and now gets an
+  error; nothing else changes. X-Wing is unchanged, as its draft specifies. This is the other use
+  of the security exception.
+
+### Fixed
+
+- **`hqc` on Ubuntu 26.04** (libclang 22). The newest `oqs-sys` release builds with `bindgen`
+  0.71, which breaks under clang 22. The README now gives the workaround (an older libclang via
+  `LIBCLANG_PATH`), and CI runs the `hqc` and `--all-features` jobs on both 24.04 and 26.04
+  that way. No code change; the fix proper needs an `oqs-sys` release with `bindgen` 0.72.1+.
+- **Lockfiles move `ctutils` 0.4.2 to 0.4.4** (RUSTSEC-2026-0385). See the MSRV change above.
+
+### Added
+
+- **X-Wing interop test against an independent implementation** (KEM-01,
+  `tests/xwing_interop.rs`). RustCrypto's `x-wing` 0.1.1 (dev-dependency only) encapsulates to
+  this crate's X-Wing keys and this crate must decapsulate to the same secret, and the reverse.
+  One flipped ciphertext byte breaks the agreement (control). `tests/vectors/README.md` names
+  the X-Wing vectors' source in one line: `spec/test-vectors.json` from
+  `dconnolly/draft-connolly-cfrg-xwing-kem`, draft revision `-10`.
+- **Compile-fail doctests for the `kat` entry points** (KEM-02, `src/kat_gate_doctests.rs`,
+  doctest-only). Each of the 16 `kat`-only functions fails to compile without the feature, and
+  the same snippet compiles and runs with `--features kat` (control).
+- **`docs/aead-wrap-format.md`** (KEM-04): a sealed box carries no format or version tag. Its
+  only encoding is a five-field JSON object, and the construction version exists only in the
+  HKDF label. No tag is added here, as that would be a wire change; it is left for 0.4.0. Two
+  tests pin the finding.
+- **`supply-chain/audits.toml`**: cargo-vet audits of this crate's own published versions,
+  importable by consumers (see the file's header).
+
+### Documentation
+
+- The crate family section (README and crate docs) lists all nine crates with a tier and the
+  family line each one builds on. aethel-vault is now Lab, and the Lab definition reads "keep
+  them off a production identity or payment path".
+
 ## [0.3.1] - 2026-09-23
 
 Documentation and metadata only. No change to the API, the wire formats or behaviour.

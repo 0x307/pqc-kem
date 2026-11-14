@@ -1,6 +1,6 @@
 # pqc-kem
 
-> **Tier:** Production · **MSRV:** 1.85 · **License:** MIT OR Apache-2.0 · Not independently audited, see [the crate family](#the-0x307-crate-family)
+> **Tier:** Production · **MSRV:** 1.87 · **License:** MIT OR Apache-2.0 · Not independently audited, see [the crate family](#the-0x307-crate-family)
 
 [![CI](https://github.com/0x307/pqc-kem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/0x307/pqc-kem/actions/workflows/ci.yml)
 [![cargo-deny](https://github.com/0x307/pqc-kem/actions/workflows/cargo-deny.yml/badge.svg?branch=main)](https://github.com/0x307/pqc-kem/actions/workflows/cargo-deny.yml)
@@ -344,6 +344,13 @@ await init();
 |--------------|---------|-----------------------------------------------------------------------------------------------|
 | `std`        | ✅ Yes  | Enables `std`-dependent trait impls (`sha2/std`, `serde/std`, `zeroize/std`, `ml-kem/getrandom`). Disable for `no_std` targets. |
 | `hqc`        | ❌ No   | Enables HQC-128/192/256 via `liboqs` (the `oqs` crate, C FFI). Not WASM-compatible. Requires a C toolchain, `cmake`, and `libclang` (for `bindgen`) — no OpenSSL required with this feature alone. |
+
+> **`hqc` with libclang 22 (Ubuntu 26.04 and newer):** the newest published `oqs-sys`
+> (0.11.0+liboqs-0.13.0) uses `bindgen` 0.71, which generates broken bindings under clang 22, so
+> the build stops with `attempt to compute 1_usize - 88_usize` in `OQS_SIG`'s layout check. Until an
+> `oqs-sys` release picks up `bindgen` 0.72.1 or newer, build with an older libclang, for example
+> `sudo apt-get install libclang-21-dev` and `LIBCLANG_PATH=/usr/lib/llvm-21/lib cargo build
+> --features hqc`. CI runs `hqc` on Ubuntu 24.04 and on 26.04 this way.
 | `aead-wrap`  | ❌ No   | Adds [`aead_wrap`](src/aead_wrap.rs): seal a payload to a KEM public key (KEM → HKDF-SHA256 → XChaCha20-Poly1305 or ChaCha20-Poly1305). One new dependency, `chacha20poly1305`, without its `alloc` feature. `no_std`/`alloc`- and WASM-compatible. See [Sealed boxes](#sealed-boxes-aead-wrap-feature). |
 | `kat`        | ❌ No   | Adds a handful of deterministic, **testing/interop-only** entry points (`MlKem{512,768,1024}Keypair::from_seed_halves`/`encapsulate_deterministic`/`from_expanded_decapsulation_key_bytes`/`to_expanded_decapsulation_key_bytes`, `fips203::hybrid::x25519_kat`) used by `tests/kat_ml_kem.rs` and `tests/kat_x25519.rs` to check this crate against published Known-Answer-Test vectors. `no_std`/`alloc`-compatible; adds no new dependencies. **Never use these for production key generation or key exchange.** See [Known-Answer Tests](#known-answer-tests) below. |
 
@@ -838,7 +845,7 @@ This forbids `unsafe` in this crate's source only; it does not (and cannot) reac
 
 ### Prerequisites
 
-- Rust 1.85+ (MSRV, enforced in CI; `rustup update stable`)
+- Rust 1.87+ (MSRV, enforced in CI; `rustup update stable`)
 - `wasm-pack` for WASM builds: `cargo install wasm-pack`
 - `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
 
@@ -901,7 +908,7 @@ Thirteen jobs (four added in 0.3.0's WP3 pass — `no-std-build`, `clippy-and-do
 `no_std` claim, lint/doc hygiene, and the WASM JS API test unenforced by CI):
 
 - **Default features (build + test)** — `cargo build` / `cargo test` with default features. This is the crate's supported surface and must always pass. This job also records the clone-to-green time (fresh checkout → passing tests) in the workflow run summary.
-- **MSRV (Rust 1.85.0, build + test)** — `cargo build` / `cargo test` with default features, pinned to exactly the `rust-version` declared in `Cargo.toml` (not `stable`). Fails if any future change relies on a Rust feature newer than the declared MSRV.
+- **MSRV (Rust 1.87.0, build + test)** — `cargo build` / `cargo test` with default features, pinned to exactly the `rust-version` declared in `Cargo.toml` (not `stable`). Fails if any future change relies on a Rust feature newer than the declared MSRV.
 - **`pqc-kem-wasm` (wasm32 cdylib artifact)** — builds the actual advertised standalone WASM artifact (the sibling `pqc-kem-wasm` crate; see [Crate layout](#crate-layout)) for `wasm32-unknown-unknown`. This is the exact invocation `build.ps1`/`build-wasm.ps1` run, minus wasm-pack's JS/TS glue generation.
 - **Downstream consumer (no_std + external std leak, wasm32)** — builds `tests/downstream-consumer-fixture/`, a minimal separate crate that depends on `pqc-kem` as an ordinary no_std library while independently linking `std` via an unrelated dependency, targeting `wasm32-unknown-unknown`. This is the actual regression test for `CRA-1` — the defect it catches (a library crate wrongly claiming process-wide lang items) is only observable from a consumer's build graph, never from building `pqc-kem` on its own.
 - **`hqc` feature (build + test)** — `cargo build`/`cargo test --features hqc`, on a runner with a C toolchain, `cmake`, and `libclang` available (verified not to additionally need OpenSSL for `hqc` alone). This is real, working functionality now, not a stub — must always pass. Also runs `cargo doc --no-deps --features hqc` with `-D warnings` (the only runner in this workflow that can build the `hqc`-gated doc items at all).
@@ -959,19 +966,22 @@ Ed Johnson
 
 ## The 0x307 crate family
 
-`pqc-kem` is one of six open-source crates from [0x307](https://0x307.com/crates), held to one
+`pqc-kem` is one of nine open-source crates from [0x307](https://0x307.com/crates), held to one
 audit and stability standard.
 
-| Crate | Tier | What it does |
-|---|---|---|
-| [pqc-sig](https://crates.io/crates/pqc-sig) | Production | ML-DSA, SLH-DSA and FN-DSA signatures (FIPS 204/205/206) |
-| [pqc-kem](https://crates.io/crates/pqc-kem) (this crate) | Production | ML-KEM (FIPS 203), the X25519 + ML-KEM-768 hybrid, X-Wing, and sealed boxes |
-| [aethel-core](https://crates.io/crates/aethel-core) | Production | Post-quantum anonymous identity: a separate identifier per context, context-bound ML-DSA signing |
-| [aethel-sdk](https://crates.io/crates/aethel-sdk) | Preview | The SDK over aethel-core, and the place to start |
-| [aethel-vault](https://crates.io/crates/aethel-vault) | Preview | Agent-held wallet: policy-gated x402 / EIP-3009 signing with ML-DSA-65 spend records |
-| [pqc-privacy](https://crates.io/crates/pqc-privacy) | Lab | Research bundle, kept off every identity and payment path |
+| Crate | Tier | What it does | Builds on |
+|---|---|---|---|
+| [pqc-kem](https://crates.io/crates/pqc-kem) (this crate) | Production | ML-KEM (FIPS 203), the X25519 + ML-KEM-768 hybrid, X-Wing, and sealed boxes | none in the family |
+| [pqc-sig](https://crates.io/crates/pqc-sig) | Production | ML-DSA, SLH-DSA and FN-DSA signatures (FIPS 204/205/206) | none in the family |
+| [aethel-core](https://crates.io/crates/aethel-core) | Production | Post-quantum anonymous identity: a separate identifier per context, context-bound ML-DSA signing | pqc-sig 0.5 |
+| [aethel-auth](https://crates.io/crates/aethel-auth) | Production | Delegated authority for agent identities: login proofs, bounded delegation, step-up approval, revocation | aethel-core 0.7 |
+| [aethel-sdk](https://crates.io/crates/aethel-sdk) | Preview | The SDK over aethel-core, and the place to start | pqc-sig 0.5 (aethel-core 0.7 vendored) |
+| [erand-nats](https://crates.io/crates/erand-nats) | Preview | A post-quantum NATS client inside a WASM component | pqc-kem 0.2, pqc-sig 0.4 |
+| [witan](https://crates.io/crates/witan) | Preview | Post-quantum gossip engine with message-level authentication, as a WASM component | pqc-kem 0.2, pqc-sig 0.4 |
+| [aethel-vault](https://crates.io/crates/aethel-vault) | Lab | Agent-held wallet: policy-gated x402 / EIP-3009 signing with ML-DSA-65 spend records | aethel-core 0.7 |
+| [pqc-privacy](https://crates.io/crates/pqc-privacy) | Lab | Research bundle, kept off every identity and payment path | pqc-kem 0.3, pqc-sig 0.5 |
 
-**Production** crates are thin, standards-bound libraries meant to be depended on today. **Preview** crates work and are published, with APIs still settling. **Lab** crates are research, never on an identity or payment path.
+**Production** crates are thin, standards-bound libraries meant to be depended on today. **Preview** crates work and are published, with APIs still settling. **Lab** crates are research and experiments: try them, but keep them off a production identity or payment path.
 
 **Runnable examples:** [0x307/examples](https://github.com/0x307/examples), one program per
 crate, pinned to the published versions.

@@ -420,3 +420,71 @@ fn hybrid_profile_v2_xwing_constants() {
     assert_eq!(HybridProfile::V2XWing.ct_len(), 1120);
     assert_eq!(HybridProfile::V2XWing.sk_len(), 32);
 }
+
+// ── Low-order X25519 points (KEM-03) ──────────────────────────────────────────
+
+/// X25519 u-coordinates that force an all-zero shared secret for every
+/// (clamped) scalar: 0, 1, the two order-8 points, p-1, and the
+/// non-canonical encodings p and p+1 (which reduce to 0 and 1).
+const LOW_ORDER_POINTS: [[u8; 32]; 7] = [
+    hex_literal::hex!("0000000000000000000000000000000000000000000000000000000000000000"),
+    hex_literal::hex!("0100000000000000000000000000000000000000000000000000000000000000"),
+    hex_literal::hex!("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
+    hex_literal::hex!("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"),
+    hex_literal::hex!("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    hex_literal::hex!("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    hex_literal::hex!("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+];
+
+#[test]
+fn encapsulate_refuses_low_order_recipient_x25519_key() {
+    let recipient = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let mlkem_pub = recipient.mlkem_public_bytes();
+
+    for point in LOW_ORDER_POINTS {
+        let err = HybridKemKeypair::encapsulate(&mut OsRng, &point, &mlkem_pub)
+            .expect_err("low-order recipient key must be refused");
+        assert!(
+            matches!(err, pqc_kem::KemError::Encapsulation(_)),
+            "expected Encapsulation error, got {err:?}"
+        );
+
+        let pk = HybridPublicKey::new(&point, &mlkem_pub);
+        assert!(HybridKemKeypair::encapsulate_to(&mut OsRng, &pk).is_err());
+    }
+}
+
+#[test]
+fn decapsulate_refuses_low_order_ephemeral_key() {
+    let recipient = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+    let (honest_ct, _) = HybridKemKeypair::encapsulate_to(&mut OsRng, &recipient.public_key())
+        .expect("encapsulate failed");
+    let mlkem_ct = honest_ct.mlkem_bytes().expect("mlkem bytes");
+
+    for point in LOW_ORDER_POINTS {
+        let ct = HybridKemCiphertext::new(&point, &mlkem_ct);
+        let err = recipient
+            .decapsulate(&ct)
+            .expect_err("low-order ephemeral key must be refused");
+        assert!(
+            matches!(err, pqc_kem::KemError::Decapsulation(_)),
+            "expected Decapsulation error, got {err:?}"
+        );
+    }
+}
+
+/// Control for the two tests above: ordinary keypairs still round-trip, and
+/// the same ML-KEM ciphertext with its honest ephemeral key still opens.
+#[test]
+fn normal_keypairs_still_round_trip_after_low_order_check() {
+    for _ in 0..32 {
+        let recipient = HybridKemKeypair::generate(&mut OsRng).expect("keygen failed");
+        let (ct, sender_ss) = HybridKemKeypair::encapsulate_to(&mut OsRng, &recipient.public_key())
+            .expect("encapsulate failed");
+        let rebuilt = HybridKemCiphertext::new(
+            &ct.x25519_bytes().expect("x25519 bytes"),
+            &ct.mlkem_bytes().expect("mlkem bytes"),
+        );
+        assert_eq!(recipient.decapsulate(&rebuilt).expect("decapsulate").bytes, sender_ss.bytes);
+    }
+}

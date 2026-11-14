@@ -14,6 +14,10 @@ on:
   push:
     branches: [main]
   pull_request:
+    # PRs into main only. A stacked PR's base is another feature branch, so
+    # the stack's story PRs don't run CI; the merge PR, opened against main
+    # and holding the whole stack, does.
+    branches: [main]
 
 # Private repo, metered Actions minutes. This dedupes two independent
 # sources of wasted runs: (1) pushing several times in a row leaves earlier,
@@ -65,19 +69,21 @@ jobs:
   # Builds against the exact MSRV declared in Cargo.toml's `rust-version`
   # (P2-09 / Linear 0X3-35). Determined empirically, not guessed: Rust 1.84.0
   # fails outright (block-buffer v0.12.1 requires the `edition2024` Cargo
-  # feature, stabilized in 1.85), while 1.85.0 builds and tests cleanly. This
+  # feature, stabilized in 1.85), while 1.85.0 builds and tests cleanly.
+  # Raised to 1.87 in 0.3.2: ctutils 0.4.4, the fix for RUSTSEC-2026-0385
+  # (reached through hybrid-array and ml-kem), requires rustc 1.87. This
   # job pins the toolchain to exactly that version -- not `stable` -- so it
   # goes red the moment a future change (this crate's code or a dependency
   # bump) relies on anything newer than the declared MSRV.
   msrv-build-test:
-    name: MSRV (Rust 1.85.0, build + test)
+    name: MSRV (Rust 1.87.0, build + test)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (fresh clone, no cache)
         uses: actions/checkout@v4
 
-      - name: Install Rust 1.85.0 (exact MSRV toolchain, fresh, no cache)
-        uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install Rust 1.87.0 (exact MSRV toolchain, fresh, no cache)
+        uses: dtolnay/rust-toolchain@1.87.0
 
       - name: cargo build (default features, MSRV toolchain)
         run: cargo build --locked --verbose
@@ -147,14 +153,38 @@ jobs:
   # missing tools rather than a real code issue, that's the first thing to
   # check.
   hqc-feature-build-test:
-    name: hqc feature (build + test)
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os == 'ubuntu-24.04' && 'hqc feature (build + test)' || 'hqc feature (build + test, ubuntu-26.04)' }}
+    # Runs on 24.04 and 26.04. On 26.04 the default libclang is 22, and
+    # oqs-sys 0.11.0+liboqs-0.13.0 (newest published) builds with bindgen
+    # 0.71, which mis-generates the OQS_SIG struct under clang 22 (its layout
+    # check fails: "attempt to compute 1_usize - 88_usize"). bindgen fixed
+    # clang 22 in 0.72.1 and oqs-sys main already requires 0.72, but no
+    # oqs-sys release has it yet. Until one does, 26.04 builds with the newest
+    # libclang below 22, the same workaround the README gives consumers.
+    # Remove the libclang step once a released oqs-sys builds with clang 22.
+    # The 24.04 leg keeps the job's original name, which branch protection
+    # requires; the 26.04 leg is named separately.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout (fresh clone, no cache)
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain (fresh, no cache)
         uses: dtolnay/rust-toolchain@stable
+
+      - name: libclang below 22 for oqs-sys (26.04 only)
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          sudo apt-get update -qq
+          v=$(apt-cache search --names-only '^libclang-[0-9]+-dev$' | sed -E 's/^libclang-([0-9]+)-dev.*/\1/' | awk '$1 < 22' | sort -n | tail -1)
+          if [ -z "$v" ]; then echo "no libclang below 22 in apt"; exit 1; fi
+          sudo apt-get install -y -qq "libclang-$v-dev"
+          echo "using libclang $v"
+          echo "LIBCLANG_PATH=/usr/lib/llvm-$v/lib" >> "$GITHUB_ENV"
 
       - name: cargo build --features hqc
         run: cargo build --features hqc --locked --verbose
@@ -185,14 +215,38 @@ jobs:
   # asserted the opposite (must fail with exactly two named compile_error!s)
   # -- see CHANGELOG.md's 0.3.0 entry for the full writeup.
   all-features-build-test:
-    name: --all-features (build + test)
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os == 'ubuntu-24.04' && '--all-features (build + test)' || '--all-features (build + test, ubuntu-26.04)' }}
+    # Runs on 24.04 and 26.04. On 26.04 the default libclang is 22, and
+    # oqs-sys 0.11.0+liboqs-0.13.0 (newest published) builds with bindgen
+    # 0.71, which mis-generates the OQS_SIG struct under clang 22 (its layout
+    # check fails: "attempt to compute 1_usize - 88_usize"). bindgen fixed
+    # clang 22 in 0.72.1 and oqs-sys main already requires 0.72, but no
+    # oqs-sys release has it yet. Until one does, 26.04 builds with the newest
+    # libclang below 22, the same workaround the README gives consumers.
+    # Remove the libclang step once a released oqs-sys builds with clang 22.
+    # The 24.04 leg keeps the job's original name, which branch protection
+    # requires; the 26.04 leg is named separately.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout (fresh clone, no cache)
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain (fresh, no cache)
         uses: dtolnay/rust-toolchain@stable
+
+      - name: libclang below 22 for oqs-sys (26.04 only)
+        if: matrix.os == 'ubuntu-26.04'
+        run: |
+          sudo apt-get update -qq
+          v=$(apt-cache search --names-only '^libclang-[0-9]+-dev$' | sed -E 's/^libclang-([0-9]+)-dev.*/\1/' | awk '$1 < 22' | sort -n | tail -1)
+          if [ -z "$v" ]; then echo "no libclang below 22 in apt"; exit 1; fi
+          sudo apt-get install -y -qq "libclang-$v-dev"
+          echo "using libclang $v"
+          echo "LIBCLANG_PATH=/usr/lib/llvm-$v/lib" >> "$GITHUB_ENV"
 
       - name: cargo build --all-features
         run: cargo build --all-features --locked --verbose

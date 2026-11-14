@@ -1,8 +1,8 @@
 [package]
 name        = "pqc-kem"
-version     = "0.3.1"
+version     = "0.3.2"
 edition     = "2021"
-rust-version = "1.85"
+rust-version = "1.87"
 authors     = ["Kenneth Harper"]
 description = "Post-quantum key encapsulation for Rust and WASM: ML-KEM (FIPS 203), the X25519 + ML-KEM-768 hybrid (default) and X-Wing, plus sealed boxes that encrypt straight to a public key. no_std; optional native-only HQC via liboqs."
 license     = "MIT OR Apache-2.0"
@@ -36,6 +36,7 @@ include = [
     "/benches/**",
     "/wit/**",
     "/docs/hybrid-profiles.md",
+    "/docs/aead-wrap-format.md",
     "/Cargo.toml",
     "/Cargo.lock",
     "/README.md",
@@ -214,6 +215,13 @@ x25519-dalek = { version = "2", default-features = false, features = ["static_se
 ml-kem = { version = "0.3", default-features = false, features = ["alloc"] }
 hkdf = { version = "0.12", default-features = false }
 sha2 = { version = "0.10", default-features = false }
+
+# An independent X-Wing implementation (RustCrypto), used only by
+# tests/xwing_interop.rs: it encapsulates to one of this crate's X-Wing
+# public keys and this crate must decapsulate the result to the same shared
+# secret (KEM-01). Dev-only, so it never reaches a consumer's build; it
+# brings its own x25519-dalek 3 / sha3 0.12, which is fine for a test.
+x-wing = { version = "=0.1.1", default-features = false, features = ["getrandom"] }
 
 # criterion for benches/kem.rs. `default-features = false` drops the plotting
 # stack, which pulls a large tree in to render charts nothing here reads --
