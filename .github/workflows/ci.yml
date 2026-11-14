@@ -148,7 +148,13 @@ jobs:
   # check.
   hqc-feature-build-test:
     name: hqc feature (build + test)
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04, not ubuntu-latest: since ubuntu-latest moved to
+    # 26.04 (Nov 2026), oqs-sys 0.11.0+liboqs-0.13.0 (the newest published)
+    # fails to compile there. Its bindgen-generated layout check rejects
+    # OQS_SIG ("attempt to compute 1_usize - 88_usize"). Same lockfile builds
+    # on 24.04. Unpin once oqs-sys builds on 26.04; until then `hqc` doesn't
+    # build on Ubuntu 26.04 for consumers either.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout (fresh clone, no cache)
         uses: actions/checkout@v4
@@ -186,7 +192,13 @@ jobs:
   # -- see CHANGELOG.md's 0.3.0 entry for the full writeup.
   all-features-build-test:
     name: --all-features (build + test)
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04, not ubuntu-latest: since ubuntu-latest moved to
+    # 26.04 (Nov 2026), oqs-sys 0.11.0+liboqs-0.13.0 (the newest published)
+    # fails to compile there. Its bindgen-generated layout check rejects
+    # OQS_SIG ("attempt to compute 1_usize - 88_usize"). Same lockfile builds
+    # on 24.04. Unpin once oqs-sys builds on 26.04; until then `hqc` doesn't
+    # build on Ubuntu 26.04 for consumers either.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout (fresh clone, no cache)
         uses: actions/checkout@v4
