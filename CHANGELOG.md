@@ -7,7 +7,7 @@ adheres to the breaking-change and deprecation rules in
 [`STABILITY.md`](./STABILITY.md) rather than strict SemVer prior to `1.0.0` — see that
 document for what counts as breaking inside `0.x`.
 
-## [0.3.2] - Unreleased
+## [0.3.2] - 2026-11-16
 
 A patch release. No API break, and no change to the bytes of any valid exchange: every frozen
 ML-KEM, X25519, hybrid v1, X-Wing and `aead-wrap` vector passes unchanged.
